@@ -17,9 +17,10 @@ from openpyxl.comments import Comment
 import re
 import os
 import shutil
+import unicodedata
 
-# Türkçe Karakter Onarım Sözlüğü
-TR_MAP = {
+# Tam kelime ve isim onarım sözlüğü
+WORD_REPLACEMENTS = {
     "RENLOLU": "İRENLİOĞLU",
     "ETN": "ÇETİN",
     "ADVYE": "ADVİYE",
@@ -66,7 +67,6 @@ TR_MAP = {
     "LYAS": "İLYAS",
     "SMAL": "İSMAİL",
     "BRAHM": "İBRAHİM",
-    "SA": "İSA",
     "NC": "İNCİ",
     "PEK": "İPEK",
     "MREN": "İMREN",
@@ -81,9 +81,8 @@ TR_MAP = {
     "ELK": "ÇELİK",
     "ETNKAYA": "ÇETİNKAYA",
     "OBAN": "ÇOBAN",
-    "OKUN": "COŞKUN",
+    "COKUN": "COŞKUN",
     "ALAR": "ÇAĞLAR",
-    "AY": "ÇAY",
     "ELEN": "ÇELEN",
     "EVK": "ÇEVİK",
     "FT": "ÇİFTÇİ",
@@ -114,21 +113,50 @@ TR_MAP = {
     "RKET": "ŞİRKET",
     "SAAT": "SAATİ",
     "GN": "GÜNÜ",
-    "SGT": "SÖĞÜT",
-    "DUDU AY": "DUDU AY",
+    "ST": "SÖĞÜT",
+    "SGT": "SÖGÜT",
+    "BRA": "BÜŞRA",
     "YUCEL": "YÜCEL",
     "SILA ZER": "SILA ÖZER",
 }
 
-def repair_text(text):
+def clean_display_text(text):
     if not text:
         return ""
     s = str(text).strip()
-    for k, v in TR_MAP.items():
+    for k, v in WORD_REPLACEMENTS.items():
         s = s.replace(k, v)
     s = s.replace("\ufffd", "").replace("", "")
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+def norm_name_key(s):
+    """
+    PDKS ve Puantaj listelerindeki isimleri %100 eşleştirmek için standart anahtar üretir.
+    """
+    if not s:
+        return ""
+    s = str(s).strip()
+    s = re.sub(r"\(.*?\)", "", s)  # (BASİL), (SEMİH) gibi parantez içi ekleri kaldır
+    s = re.sub(r"-.*$", "", s)      # -MKP gibi ekleri kaldır
+    s = s.replace("\ufffd", "I").replace("", "")
+    s = unicodedata.normalize("NFKD", s)
+    s = re.sub(r"[^a-zA-Z0-9]", "", s).upper()
+    
+    # Özel isim varyasyonları eşleştirmesi
+    aliases = {
+        "SAMETYUMITKEN": "SAMETYUMITKAN",
+        "SERKANYUMITKEN": "SERKANYUMITKAN",
+        "SELAHATTINSOGUT": "SELAHATTINSOGUT",
+        "SELAHATTINSIT": "SELAHATTINSOGUT",
+        "SELAHATTINSIGIT": "SELAHATTINSOGUT",
+        "SELAHATTINSUGUT": "SELAHATTINSOGUT",
+        "BUSRAYAVRUTURK": "BUSRAYAVRUKURT",
+        "AYSEYILMAZ": "AYSEYILMAZ",
+        "MHDBASSELALZALEK": "MHDBASSELALZALEK",
+        "MUHAMMEDSAMIHSERHAN": "MUHAMMEDSAMIHSERHAN",
+    }
+    return aliases.get(s, s)
 
 def clean_tc(tc_val):
     if tc_val is None:
@@ -152,7 +180,7 @@ def clean_str(val):
         return ""
     if isinstance(val, float) and val.is_integer():
         return str(int(val)).strip()
-    return repair_text(str(val).strip())
+    return clean_display_text(str(val).strip())
 
 def clean_money(val):
     if val is None or val == "":
@@ -211,21 +239,29 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
        - 1. Vardiya (Gündüz): 08:00 - 16:00 (8-4) / 08:00 - 17:00 (8-5)
        - 2. Vardiya (Akşam) : 16:00 - 24:00 (16-24)
        - 3. Vardiya (Gece)  : 24:00 - 08:00 (24-8 / 00:00 - 08:00)
-    2. Temel Mesai Kuralı:
-       - Kişiler 8 saatlik vardiyalarını tamamladıklarında net 7.5 saat mesai yazılır.
-       - Erken gelişler mesaiye sayılmaz (vardiya başlangıcı esas alınır).
-    3. Fazla Mesai Kademeleri:
-       - Vardiya bitişinden sonraki ilk 25 dakikaya kadar -> Fazla mesai yok (7.5 saat)
-       - 26 - 49 dakika arası -> +0.5 saat FM (8.0 saat)
-       - 50 - 85 dakika arası -> +1.0 saat FM (8.5 saat)
-       - 86 - 109 dakika arası -> +1.5 saat FM (9.0 saat)
-       - 110 - 145 dakika arası -> +2.0 saat FM (9.5 saat)
-       - ve her döngüde aynı kademelerle devam eder.
+    2. Temel Mesai & Eksik Basım Kuralı:
+       - Kişiler vardiyalarını tamamladıklarında net 7.5 saat mesai yazılır.
+       - Giriş veya çıkış basılmamışsa (tek basım) veya çift basım varsa varsayılan 7.5 saat yazılır.
+       - Erken gelişler mesaiye sayılmaz (08:00 başlangıç esas alınır).
+    3. Sabah Giriş Toleransı (8-5 & 8-4):
+       - 08:20'ye kadar gelenler: Kesintisiz 08:00 iş başı kabul edilir (7.5 saat).
+       - 08:21 - 08:50 arası gelenler: 30 dk kesinti ile 08:30 iş başı (7.0 saat).
+       - 08:51 - 09:20 arası gelenler: 60 dk kesinti ile 09:00 iş başı (6.5 saat).
+    4. Fazla Mesai Kademeleri (17:00 sonrası):
+       - 17:00 - 17:25 -> 7.5 saat (+0.0 FM)
+       - 17:26 - 17:49 -> 8.0 saat (+0.5 FM)
+       - 17:50 - 18:25 -> 8.5 saat (+1.0 FM)
+       - 18:26 - 18:49 -> 9.0 saat (+1.5 FM)
+       - 18:50 - 19:25 -> 9.5 saat (+2.0 FM)
+       - 19:26 - 19:49 -> 10.0 saat (+2.5 FM)
+       - 19:50 - 20:25 -> 10.5 saat (+3.0 FM)
+       - 20:26 - 20:49 -> 11.0 saat (+3.5 FM)
     """
     g = parse_hm(g_saat_str)
     c = parse_hm(c_saat_str)
     
-    if not g or not c:
+    # 1. Hiç basım yoksa
+    if not g and not c:
         if sure_str:
             raw = 0.0
             if ":" in str(sure_str):
@@ -240,18 +276,22 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
                 except:
                     pass
             if raw >= 7.0:
-                h = 7.5
-                return h, max(0.0, h - 7.5)
+                return 7.5, max(0.0, 7.5 - 7.5)
             elif raw > 0:
                 return round(raw * 2) / 2.0, 0.0
         return 0.0, 0.0
+
+    # 2. Tek basım (Giriş var çıkış yok VEYA Çıkış var giriş yok):
+    # Fabrika kuralı: Eksik basımlarda personelin hak kaybı yaşamaması için varsayılan 7.5 saat yazılır.
+    if not g or not c:
+        return 7.5, 0.0
         
     g_min = g[0] * 60 + g[1]
     c_min = c[0] * 60 + c[1]
     
-    # Giriş ve çıkış aynı dakikaysa (hatalı/çift basım)
+    # 3. Giriş ve çıkış aynı dakikadaysa (çift basım / akşam kart basılmamış)
     if abs(c_min - g_min) <= 3:
-        return 0.0, 0.0
+        return 7.5, 0.0
         
     if c_min < g_min:
         c_min += 24 * 60
@@ -331,15 +371,6 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
     total = base_hours + fm
     return total, fm
 
-    # İkinci vardiya (15:00 - 24:00) veya Gece vardiyası (20:00 - 06:00 / 22:00 - 08:00)
-    raw_duration = (c_min - g_min) / 60.0
-    net_duration = max(0.0, raw_duration - 1.0)
-    calc_h = max(0.0, (int(net_duration / 0.5)) * 0.5)
-    if calc_h >= 7.0 and calc_h < 7.5:
-        calc_h = 7.5
-    fm = max(0.0, calc_h - 7.5)
-    return calc_h, fm
-
 def main():
     print("==================================================")
     print(" FİDE KONSERVE - PUANTAJ VE PDKS İŞLEME SİSTEMİ")
@@ -378,23 +409,31 @@ def main():
         c_tarih = clean_str(sh_pdks.cell_value(r, 10))
         c_saat = clean_str(sh_pdks.cell_value(r, 11))
         sure_str = clean_str(sh_pdks.cell_value(r, 12))
-        mesai_str = clean_str(sh_pdks.cell_value(r, 15)) if sh_pdks.ncols > 15 else ""
-        fazla_str = clean_str(sh_pdks.cell_value(r, 17)) if sh_pdks.ncols > 17 else ""
         puantaj_tarih = clean_str(sh_pdks.cell_value(r, 18)) if sh_pdks.ncols > 18 else ""
         
         date_val = puantaj_tarih if puantaj_tarih else g_tarih
         
-        # Eksik basım tespiti (Giriş var çıkış yok VEYA Çıkış var giriş yok)
+        # Eksik basım tespiti (Giriş var çıkış yok VEYA Çıkış var giriş yok VEYA Çift basım)
+        g_hm = parse_hm(g_saat)
+        c_hm = parse_hm(c_saat)
         missing_type = None
         note = ""
-        if g_saat and not c_saat:
-            missing_type = "Çıkış Basılmadı"
-            note = f"{date_val} Giriş: {g_saat} | Çıkış Basılmadı (7.5h yazıldı)"
-        elif c_saat and not g_saat:
+        
+        if g_hm and not c_hm:
+            if g_hm[0] >= 15:
+                missing_type = "Giriş Basılmadı"
+                note = f"{date_val} Çıkış: {g_saat} | Giriş Basılmadı (7.5h yazıldı)"
+            else:
+                missing_type = "Çıkış Basılmadı"
+                note = f"{date_val} Giriş: {g_saat} | Çıkış Basılmadı (7.5h yazıldı)"
+        elif c_hm and not g_hm:
             missing_type = "Giriş Basılmadı"
             note = f"{date_val} Çıkış: {c_saat} | Giriş Basılmadı (7.5h yazıldı)"
+        elif g_hm and c_hm and abs((c_hm[0]*60 + c_hm[1]) - (g_hm[0]*60 + g_hm[1])) <= 3:
+            missing_type = "Çift/Hatalı Basım"
+            note = f"{date_val} Giriş: {g_saat} | Çıkış Basılmadı (7.5h yazıldı)"
             
-        if missing_type and full_name:
+        if missing_type and full_name and full_name != "BBBBBB":
             missing_punch_records.append({
                 "sno": len(missing_punch_records) + 1,
                 "tarih": date_val,
@@ -437,17 +476,17 @@ def main():
                 pass
                 
         if day_num:
-            norm_name = full_name.replace("İ", "I").replace("ı", "i").replace(" ", "").upper()
-            if norm_name not in emp_pdks_daily:
-                emp_pdks_daily[norm_name] = {}
-            if day_num not in emp_pdks_daily[norm_name]:
-                emp_pdks_daily[norm_name][day_num] = {"sure": 0.0, "normal": 0.0, "fazla": 0.0, "missing_type": None, "note": ""}
-            emp_pdks_daily[norm_name][day_num]["sure"] += sure
-            emp_pdks_daily[norm_name][day_num]["normal"] += mesai
-            emp_pdks_daily[norm_name][day_num]["fazla"] += fazla
+            name_key = norm_name_key(full_name)
+            if name_key not in emp_pdks_daily:
+                emp_pdks_daily[name_key] = {}
+            if day_num not in emp_pdks_daily[name_key]:
+                emp_pdks_daily[name_key][day_num] = {"sure": 0.0, "normal": 0.0, "fazla": 0.0, "missing_type": None, "note": ""}
+            emp_pdks_daily[name_key][day_num]["sure"] += sure
+            emp_pdks_daily[name_key][day_num]["normal"] += mesai
+            emp_pdks_daily[name_key][day_num]["fazla"] += fazla
             if missing_type:
-                emp_pdks_daily[norm_name][day_num]["missing_type"] = missing_type
-                emp_pdks_daily[norm_name][day_num]["note"] = note
+                emp_pdks_daily[name_key][day_num]["missing_type"] = missing_type
+                emp_pdks_daily[name_key][day_num]["note"] = note
 
     print(f"   -> PDKS'den {len(pdks_records)} turnike kaydı ({len(missing_punch_records)} eksik basım) ve {len(emp_pdks_daily)} personel okundu.")
 
@@ -493,7 +532,7 @@ def main():
                     "isim": isim, "sirket": sirket, "dosya": dosya,
                     "kalan_borc": kalan_borc, "kesilen": kesilen, "iban": iban
                 })
-                icra_by_name[isim.replace("İ", "I").replace("ı", "i").replace(" ", "").upper()] = {
+                icra_by_name[norm_name_key(isim)] = {
                     "kesilen": kesilen, "kalan_borc": kalan_borc, "dosya": dosya, "iban": iban
                 }
 
@@ -791,7 +830,7 @@ def main():
         ws_p[f"M{r_idx}"].alignment = align_center
         ws_p[f"N{r_idx}"].alignment = align_center
         
-        norm_name = emp["ad_soyad"].replace("İ", "I").replace("ı", "i").replace(" ", "").upper()
+        norm_name = norm_name_key(emp["ad_soyad"])
         emp_pdks = emp_pdks_daily.get(norm_name, {})
         
         emp_ot_weekday = 0.0
@@ -1023,7 +1062,7 @@ def main():
                 ws_pdk[f"{cl}{r_idx}"].alignment = align_center
 
     # ----------------------------------------------------
-    # SAYFA 3: Resmi_Bordro_SGK
+    # SAYFA 4: Resmi_Bordro_SGK
     # ----------------------------------------------------
     ws_bor = wb_new.create_sheet(title="Resmi_Bordro_SGK")
     ws_bor.views.sheetView[0].showGridLines = True
@@ -1075,7 +1114,7 @@ def main():
                 ws_bor[f"{cl}{r_idx}"].alignment = align_center
 
     # ----------------------------------------------------
-    # SAYFA 4: Icra_Takip
+    # SAYFA 5: Icra_Takip
     # ----------------------------------------------------
     ws_icra = wb_new.create_sheet(title="Icra_Takip")
     ws_icra.views.sheetView[0].showGridLines = True
@@ -1097,9 +1136,9 @@ def main():
 
     for r_idx, ic in enumerate(icra_list, start=2):
         tc_found = ""
-        norm_ic_name = ic["isim"].replace("İ", "I").replace("ı", "i").replace(" ", "").upper()
+        norm_ic_name = norm_name_key(ic["isim"])
         for p in puantaj_rows:
-            if p["ad_soyad"].replace("İ", "I").replace("ı", "i").replace(" ", "").upper() == norm_ic_name:
+            if norm_name_key(p["ad_soyad"]) == norm_ic_name:
                 tc_found = p["tc"]
                 break
                 
@@ -1125,7 +1164,7 @@ def main():
                 ws_icra[f"{cl}{r_idx}"].alignment = align_center
 
     # ----------------------------------------------------
-    # SAYFA 5: SGK_Raporlar
+    # SAYFA 6: SGK_Raporlar
     # ----------------------------------------------------
     ws_rap = wb_new.create_sheet(title="SGK_Raporlar")
     ws_rap.views.sheetView[0].showGridLines = True
@@ -1227,7 +1266,7 @@ def main():
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
     print(" - 8-5 Normal Çalışma ve 3 Vardiya (8-4 / 16-24 / 24-8) tam destekli")
     print(f" - Eksik Basım Yönetimi: {len(missing_punch_records)} hatalı basım 'Eksik_Basim_Raporu' sayfasına işlendi")
-    print("   (Puantaj tablosunda bu hücreler Turuncu renk ve Bilgi Notu ile işaretlendi)")
+    print("   (Puantaj tablosunda bu hücrelere 7.5 saat yazıldı, Turuncu renk ve Bilgi Notu eklendi)")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
     print("==================================================")
