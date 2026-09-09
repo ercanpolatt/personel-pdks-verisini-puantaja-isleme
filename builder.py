@@ -205,11 +205,19 @@ def parse_hm(t_str):
 
 def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=False):
     """
-    Fabrika Çalışma & Fazla Mesai Kuralları:
-    1. 9-5 vardiyasında sabah 09:00'dan önce (örneğin 1 saat önce 08:00'de) gelse bile
-       mesaiye 09:00'da başlamış kabul edilir. Erken gelişler mesaiye sayılmaz.
-    2. 9-5 çalışanların normal günlük mesaisi 7.5 saat olarak yazılır.
-    3. Fazla mesailer (17:00 sonrası) yarımşar saatlik (0.5 saat / 30 dakika) doldurma oranına göre hesaplanır (7.5, 8.0, 8.5, 9.0...).
+    Fabrika Çalışma & Fazla Mesai Özel Kuralları:
+    1. Sabah Giriş:
+       - 08:10 ve öncesi girişler: Mesai 08:00'de başlamış sayılır (Normal 7.5 saat taban).
+       - 08:10'dan sonraki girişler: Mesai 09:00'a yuvarlanır (6.5 saat taban).
+    2. Akşam Çıkış & Fazla Mesai Aralıkları:
+       - 17:00 - 17:24 arası çıkış -> 7.5 saat (Fazla mesai yok)
+       - 17:25 - 17:49 arası çıkış -> 8.0 saat (+0.5 saat FM)
+       - 17:50 - 18:24 arası çıkış -> 8.5 saat (+1.0 saat FM)
+       - 18:25 - 18:49 arası çıkış -> 9.0 saat (+1.5 saat FM)
+       - 18:50 - 19:24 arası çıkış -> 9.5 saat (+2.0 saat FM)
+       - 19:25 - 19:49 arası çıkış -> 10.0 saat (+2.5 saat FM)
+       - 19:50 - 20:24 arası çıkış -> 10.5 saat (+3.0 saat FM)
+       - ve bu aralıklarla artarak devam eder.
     """
     g = parse_hm(g_saat_str)
     c = parse_hm(c_saat_str)
@@ -236,38 +244,49 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
         
     # Gündüz / Sabah vardiyası (06:00 - 11:00 arası girişler)
     if 6 * 60 <= g_min <= 11 * 60:
-        shift_start_min = 9 * 60  # 09:00 başlangıç
-        shift_end_min = 17 * 60    # 17:00 bitiş
+        # Sabah kuralı: 08:10 ve öncesi -> 08:00 başlangıç. 08:10 sonrası -> 09:00 başlangıç
+        if g_min <= 8 * 60 + 10:
+            effective_start_min = 8 * 60
+            base_hours = 7.5
+        else:
+            effective_start_min = 9 * 60
+            base_hours = 6.5
+            
+        shift_end_min = 17 * 60
         
-        # Erken gelişler (09:00 öncesi) mesaiye sayılmaz, 09:00 başlangıç kabul edilir
-        effective_start_min = max(shift_start_min, g_min)
-        
-        # Eğer normal mesai bitişinden (17:00) önce çıkmışsa
+        # 17:00 öncesi erken çıkış varsa
         if c_min < shift_end_min:
             raw_worked = (c_min - effective_start_min) / 60.0
-            net_worked = max(0.0, raw_worked - 0.5) # 30 dk mola
-            h = round(net_worked * 2) / 2.0
-            return h, 0.0
+            net = max(0.0, raw_worked - 1.0)
+            return round(net * 2) / 2.0, 0.0
             
-        # Normal 9-5 mesaisi: 7.5 saat net
-        base_hours = 7.5
-        
-        # Fazla mesai (17:00 sonrası)
-        ot_minutes = c_min - shift_end_min
-        
-        # Yarım saat doldurma kuralı: 30 dakikayı tamamladıkça 0.5 saat FM eklenir
-        ot_half_hours = ot_minutes // 30
-        ot_hours = ot_half_hours * 0.5
-        
-        total_hours = base_hours + ot_hours
-        fazla_mesai = ot_hours
-        return total_hours, fazla_mesai
+        # 17:00 sonrası çıkış kademeleri:
+        # 17:25'e kadar -> 0 FM
+        # 17:25 - 17:49 -> +0.5 FM (8.0)
+        # 17:50 - 18:24 -> +1.0 FM (8.5)
+        # 18:25 - 18:49 -> +1.5 FM (9.0)
+        # 18:50 - 19:24 -> +2.0 FM (9.5) ...
+        ot_min = c_min - shift_end_min
+        if ot_min < 25:
+            step = 0
+        else:
+            hours_past = ot_min // 60
+            min_in_hour = ot_min % 60
+            if min_in_hour < 25:
+                step = hours_past * 2
+            elif min_in_hour < 50:
+                step = hours_past * 2 + 1
+            else:
+                step = hours_past * 2 + 2
+                
+        fm = step * 0.5
+        total_hours = base_hours + fm
+        return total_hours, fm
 
     # İkinci vardiya (15:00 - 24:00) veya Gece vardiyası (20:00 - 06:00 / 22:00 - 08:00)
     raw_duration = (c_min - g_min) / 60.0
     net_duration = max(0.0, raw_duration - 1.0)
-    half_steps = int(net_duration / 0.5)
-    calc_h = max(0.0, half_steps * 0.5)
+    calc_h = max(0.0, (int(net_duration / 0.5)) * 0.5)
     if calc_h >= 7.0 and calc_h < 7.5:
         calc_h = 7.5
     fm = max(0.0, calc_h - 7.5)
