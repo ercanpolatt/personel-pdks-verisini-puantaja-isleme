@@ -256,9 +256,8 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
         c_min += 24 * 60
         
     # Vardiya Tespiti & Başlangıç/Bitiş Saatleri:
-    # 1. Vardiya: 08:00 - 17:00 / 16:00 (Giriş 06:00 - 11:59)
+    # 1. GÜNDÜZ VARDİYASI: 08:00 - 17:00 (8-5) veya 08:00 - 16:00 (8-4) (Giriş 06:00 - 11:59)
     if 6 * 60 <= g_min <= 11 * 60 + 59:
-        shift_end = 17 * 60  # 17:00
         # 08:20 toleransı
         if g_min <= 8 * 60 + 20:
             effective_start = 8 * 60
@@ -269,6 +268,12 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
             effective_start = 8 * 60 + cuts * 30
             base_hours = max(0.0, 7.5 - cuts * 0.5)
             
+        # 8-4 vardiyasında 16:00 - 16:25 arası çıkış -> 7.5 saat net
+        if 15 * 60 + 50 <= c_min <= 16 * 60 + 25:
+            return 7.5, 0.0
+            
+        # 8-5 vardiyası bitişi: 17:00
+        shift_end = 17 * 60
         if c_min < shift_end:
             raw_w = (c_min - effective_start) / 60.0
             net = max(0.0, raw_w - 1.0)
@@ -276,7 +281,7 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
             
         ot_min = c_min - shift_end
 
-    # 2. Vardiya: 16:00 - 24:00 (Giriş 12:00 - 19:59)
+    # 2. AKŞAM VARDİYASI: 16:00 - 24:00 (Giriş 12:00 - 19:59)
     elif 12 * 60 <= g_min <= 19 * 60 + 59:
         shift_end = 24 * 60  # 00:00
         if g_min <= 16 * 60 + 20:
@@ -295,7 +300,7 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
             
         ot_min = c_min - shift_end
 
-    # 3. Vardiya: 24:00 - 08:00 (Giriş 20:00 - 05:59)
+    # 3. GECE VARDİYASI: 24:00 - 08:00 (00:00 - 08:00) (Giriş 20:00 - 05:59)
     else:
         shift_end = 32 * 60 if g_min >= 20 * 60 else 8 * 60  # 08:00
         effective_start = 24 * 60 if g_min >= 20 * 60 else 0
@@ -1131,8 +1136,9 @@ def main():
 
     print("==================================================")
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
-    print(" - 3 Vardiyalı Sistem: 08-17 / 16-24 / 24-08 (8 saat çalışmaya net 7.5 saat)")
-    print(" - Fazla Mesailer: 26-49 dk (+0.5h), 50-85 dk (+1.0h), 86-109 dk (+1.5h)...")
+    print(" - 8-5 Normal Çalışma ve 3 Vardiya (8-4 / 16-24 / 24-8) tam destekli")
+    print(" - Sabah Giriş: 08:20 toleransı (08:21 ve sonrası 30'ar dk kesintili)")
+    print(" - Fazla Mesailer: 17:26-17:49->8.0h, 17:50-18:25->8.5h, 18:26-18:49->9.0h...")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
     print("==================================================")
