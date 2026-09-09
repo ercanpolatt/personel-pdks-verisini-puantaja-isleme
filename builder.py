@@ -194,6 +194,85 @@ def get_sheet_by_keyword(wb, keyword, default_idx=None):
         return wb.sheet_by_index(default_idx)
     return None
 
+def parse_hm(t_str):
+    if not t_str or ":" not in str(t_str):
+        return None
+    p = str(t_str).strip().split(":")
+    try:
+        return int(p[0]), int(p[1])
+    except:
+        return None
+
+def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=False):
+    """
+    Fabrika Çalışma & Fazla Mesai Kuralları:
+    1. 9-5 / 8-5 vardiyalarında sabah vardiya saatinden önce (örneğin 1 saat önce) gelse bile
+       mesaiye vardiya başlangıcında (08:00 veya 09:00) başlamış kabul edilir.
+    2. 8-5 çalışanların 1.5 saat yemek molası olduğu için normal günlük mesai 7.5 saat kabul edilir.
+    3. Fazla mesailer yarımşar saatlik (0.5 saat / 30 dakika) doldurma oranına göre hesaplanır (7.5, 8.0, 8.5, 9.0...).
+    """
+    g = parse_hm(g_saat_str)
+    c = parse_hm(c_saat_str)
+    
+    if not g or not c:
+        if sure_str:
+            raw = parse_time_str(sure_str)
+            if raw > 0:
+                half_steps = round(raw / 0.5)
+                h = max(0.0, half_steps * 0.5)
+                return h, max(0.0, h - 7.5)
+        return 0.0, 0.0
+        
+    g_min = g[0] * 60 + g[1]
+    c_min = c[0] * 60 + c[1]
+    
+    # Giriş ve çıkış aynı dakikaysa (hatalı basım)
+    if abs(c_min - g_min) <= 3:
+        return 0.0, 0.0
+        
+    # Gece vardiyası çıkış ertesi güne sarktıysa
+    if c_min < g_min:
+        c_min += 24 * 60
+        
+    # Gündüz / Sabah vardiyası (06:00 - 10:00 arası girişler)
+    if 6 * 60 <= g_min <= 10 * 60:
+        shift_start_min = 9 * 60 if is_office else 8 * 60
+        shift_end_min = 17 * 60
+        
+        # Erken gelişler mesaiye sayılmaz (vardiya başlangıcından önce geldiyse vardiya başlangıcı alınır)
+        effective_start_min = max(shift_start_min, g_min)
+        
+        # Eğer normal mesai bitişinden (17:00) önce çıkmışsa
+        if c_min < shift_end_min:
+            raw_worked = (c_min - effective_start_min) / 60.0
+            net_worked = max(0.0, raw_worked - 1.0)
+            h = round(net_worked * 2) / 2.0
+            return h, 0.0
+            
+        # Normal 8-5 mesaisi: 7.5 saat net
+        base_hours = 7.5
+        
+        # Fazla mesai (17:00 sonrası)
+        ot_minutes = c_min - shift_end_min
+        
+        # Yarım saat doldurma kuralı: 30 dakikayı tamamladıkça 0.5 saat FM eklenir
+        ot_half_hours = ot_minutes // 30
+        ot_hours = ot_half_hours * 0.5
+        
+        total_hours = base_hours + ot_hours
+        fazla_mesai = ot_hours
+        return total_hours, fazla_mesai
+
+    # İkinci vardiya (15:00 - 24:00) veya Gece vardiyası (20:00 - 06:00 / 22:00 - 08:00)
+    raw_duration = (c_min - g_min) / 60.0
+    net_duration = max(0.0, raw_duration - 1.5)
+    half_steps = int(net_duration / 0.5)
+    calc_h = max(0.0, half_steps * 0.5)
+    if calc_h >= 7.0 and calc_h < 7.5:
+        calc_h = 7.5
+    fm = max(0.0, calc_h - 7.5)
+    return calc_h, fm
+
 def main():
     print("==================================================")
     print(" FİDE KONSERVE - PUANTAJ VE PDKS İŞLEME SİSTEMİ")
@@ -235,9 +314,9 @@ def main():
         fazla_str = clean_str(sh_pdks.cell_value(r, 17)) if sh_pdks.ncols > 17 else ""
         puantaj_tarih = clean_str(sh_pdks.cell_value(r, 18)) if sh_pdks.ncols > 18 else ""
         
-        sure = parse_time_str(sure_str)
-        mesai = parse_time_str(mesai_str)
-        fazla = parse_time_str(fazla_str)
+        # Fabrika kurallarına göre çalışma saati ve fazla mesai hesaplama
+        sure, fazla = calc_factory_worked_hours(g_saat, c_saat, sure_str, is_office=False)
+        mesai = min(7.5, sure)
         
         if not full_name:
             continue
@@ -246,7 +325,7 @@ def main():
             "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
             "ad_soyad": full_name, "lokasyon": lokasyon, "g_tarih": g_tarih,
             "g_saat": g_saat, "c_tarih": c_tarih, "c_saat": c_saat,
-            "sure": sure_str, "mesai": mesai_str, "fazla": fazla_str,
+            "sure": f"{sure:.1f}", "mesai": f"{mesai:.1f}", "fazla": f"{fazla:.1f}",
             "puantaj_tarih": puantaj_tarih
         })
         
@@ -979,17 +1058,20 @@ def main():
 
     # 4. Kaydetme
     output_filename = "puantaj.xlsx"
-    print(f"3. Dosya '{output_filename}' olarak kaydediliyor...")
-    wb_new.save(output_filename)
-    
-    # Ayrıca puantaj_guncel.xlsx olarak da bir kopya sakla
+    saved_name = output_filename
     try:
-        wb_new.save("puantaj_guncel.xlsx")
-    except:
-        pass
+        wb_new.save(output_filename)
+        print(f"3. Dosya '{output_filename}' olarak kaydedildi.")
+    except PermissionError:
+        saved_name = "puantaj_guncel.xlsx"
+        wb_new.save(saved_name)
+        print(f"3. UYARI: '{output_filename}' Microsoft Excel'de açık olduğu için '{saved_name}' olarak kaydedildi.")
+        print(f"   (Tam '{output_filename}' üzerine yazmak için Excel'i kapatıp tekrar çalıştırabilirsiniz).")
 
     print("==================================================")
-    print(f" BAŞARILI! '{output_filename}' dosyası eksiksiz oluşturuldu.")
+    print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
+    print(" - Fabrika Kuralları (Erken geliş toleransı & 1.5 saat yemek molası) uygulandı")
+    print(" - Fazla Mesailer 30'ar dakikalık (0.5 saat) adımlarla hesaplandı (7.5, 8.0, 8.5, 9.0...)")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
     print("==================================================")
