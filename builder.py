@@ -1089,8 +1089,8 @@ def main():
 
     print("==================================================")
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
-    print(" - Fabrika Kuralları (09:00 öncesi erken geliş toleransı & 9-5 vardiyası) uygulandı")
-    print(" - Fazla Mesailer 30'ar dakikalık (0.5 saat) adımlarla hesaplandı (7.5, 8.0, 8.5, 9.0...)")
+    print(" - 8-5 Vardiyası: 07:10 ve sonrası sabah gelişleri 08:00 iş başı kabul edildi")
+    print(" - 17:00 sonrası çıkış aralıkları (17:25->8.0, 17:50->8.5, 18:25->9.0, 18:50->9.5...) uygulandı")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
     print("==================================================")
