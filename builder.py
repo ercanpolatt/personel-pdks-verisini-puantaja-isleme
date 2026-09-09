@@ -206,10 +206,10 @@ def parse_hm(t_str):
 def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=False):
     """
     Fabrika Çalışma & Fazla Mesai Kuralları:
-    1. 9-5 / 8-5 vardiyalarında sabah vardiya saatinden önce (örneğin 1 saat önce) gelse bile
-       mesaiye vardiya başlangıcında (08:00 veya 09:00) başlamış kabul edilir.
-    2. 8-5 çalışanların 1.5 saat yemek molası olduğu için normal günlük mesai 7.5 saat kabul edilir.
-    3. Fazla mesailer yarımşar saatlik (0.5 saat / 30 dakika) doldurma oranına göre hesaplanır (7.5, 8.0, 8.5, 9.0...).
+    1. 9-5 vardiyasında sabah 09:00'dan önce (örneğin 1 saat önce 08:00'de) gelse bile
+       mesaiye 09:00'da başlamış kabul edilir. Erken gelişler mesaiye sayılmaz.
+    2. 9-5 çalışanların normal günlük mesaisi 7.5 saat olarak yazılır.
+    3. Fazla mesailer (17:00 sonrası) yarımşar saatlik (0.5 saat / 30 dakika) doldurma oranına göre hesaplanır (7.5, 8.0, 8.5, 9.0...).
     """
     g = parse_hm(g_saat_str)
     c = parse_hm(c_saat_str)
@@ -234,22 +234,22 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
     if c_min < g_min:
         c_min += 24 * 60
         
-    # Gündüz / Sabah vardiyası (06:00 - 10:00 arası girişler)
-    if 6 * 60 <= g_min <= 10 * 60:
-        shift_start_min = 9 * 60 if is_office else 8 * 60
-        shift_end_min = 17 * 60
+    # Gündüz / Sabah vardiyası (06:00 - 11:00 arası girişler)
+    if 6 * 60 <= g_min <= 11 * 60:
+        shift_start_min = 9 * 60  # 09:00 başlangıç
+        shift_end_min = 17 * 60    # 17:00 bitiş
         
-        # Erken gelişler mesaiye sayılmaz (vardiya başlangıcından önce geldiyse vardiya başlangıcı alınır)
+        # Erken gelişler (09:00 öncesi) mesaiye sayılmaz, 09:00 başlangıç kabul edilir
         effective_start_min = max(shift_start_min, g_min)
         
         # Eğer normal mesai bitişinden (17:00) önce çıkmışsa
         if c_min < shift_end_min:
             raw_worked = (c_min - effective_start_min) / 60.0
-            net_worked = max(0.0, raw_worked - 1.0)
+            net_worked = max(0.0, raw_worked - 0.5) # 30 dk mola
             h = round(net_worked * 2) / 2.0
             return h, 0.0
             
-        # Normal 8-5 mesaisi: 7.5 saat net
+        # Normal 9-5 mesaisi: 7.5 saat net
         base_hours = 7.5
         
         # Fazla mesai (17:00 sonrası)
@@ -265,7 +265,7 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
 
     # İkinci vardiya (15:00 - 24:00) veya Gece vardiyası (20:00 - 06:00 / 22:00 - 08:00)
     raw_duration = (c_min - g_min) / 60.0
-    net_duration = max(0.0, raw_duration - 1.5)
+    net_duration = max(0.0, raw_duration - 1.0)
     half_steps = int(net_duration / 0.5)
     calc_h = max(0.0, half_steps * 0.5)
     if calc_h >= 7.0 and calc_h < 7.5:
@@ -1070,7 +1070,7 @@ def main():
 
     print("==================================================")
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
-    print(" - Fabrika Kuralları (Erken geliş toleransı & 1.5 saat yemek molası) uygulandı")
+    print(" - Fabrika Kuralları (09:00 öncesi erken geliş toleransı & 9-5 vardiyası) uygulandı")
     print(" - Fazla Mesailer 30'ar dakikalık (0.5 saat) adımlarla hesaplandı (7.5, 8.0, 8.5, 9.0...)")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
