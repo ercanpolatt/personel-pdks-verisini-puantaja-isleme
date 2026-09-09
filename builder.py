@@ -205,88 +205,125 @@ def parse_hm(t_str):
 
 def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=False):
     """
-    Fabrika Çalışma & Fazla Mesai Özel Kuralları:
-    1. Sabah Giriş (08:20 Toleransı):
-       - 08:20 ve öncesi girişler (07:10 - 08:20): Mesai 08:00'de başlamış kabul edilir (Normal 7.5 saat taban).
-       - 08:21 - 08:50 arası girişler: Yarım saat kesinti ile 08:30 başlangıç (7.0 saat taban).
-       - 08:51 - 09:20 arası girişler: 1 saat kesinti ile 09:00 başlangıç (6.5 saat taban).
-    2. Akşam Çıkış & Fazla Mesai Aralıkları:
-       - 17:00 - 17:25 arası çıkış -> 7.5 saat (Fazla mesai yok)
-       - 17:26 - 17:49 arası çıkış -> 8.0 saat (+0.5 saat FM)
-       - 17:50 - 18:25 arası çıkış -> 8.5 saat (+1.0 saat FM)
-       - 18:26 - 18:49 arası çıkış -> 9.0 saat (+1.5 saat FM)
-       - 18:50 - 19:25 arası çıkış -> 9.5 saat (+2.0 saat FM)
-       - 19:26 - 19:49 arası çıkış -> 10.0 saat (+2.5 saat FM)
-       - 19:50 - 20:25 arası çıkış -> 10.5 saat (+3.0 saat FM)
-       - 20:26 - 20:49 arası çıkış -> 11.0 saat (+3.5 saat FM)
-       - ve bu aralıklarla artarak devam eder.
+    Fabrika 3 Vardiyalı Çalışma & Fazla Mesai Kuralları:
+    1. Vardiyalar:
+       - 1. Vardiya (Gündüz): 08:00 - 16:00 (8-4) / 08:00 - 17:00 (8-5)
+       - 2. Vardiya (Akşam) : 16:00 - 24:00 (16-24)
+       - 3. Vardiya (Gece)  : 24:00 - 08:00 (24-8 / 00:00 - 08:00)
+    2. Temel Mesai Kuralı:
+       - Kişiler 8 saatlik vardiyalarını tamamladıklarında net 7.5 saat mesai yazılır.
+       - Erken gelişler mesaiye sayılmaz (vardiya başlangıcı esas alınır).
+    3. Fazla Mesai Kademeleri:
+       - Vardiya bitişinden sonraki ilk 25 dakikaya kadar -> Fazla mesai yok (7.5 saat)
+       - 26 - 49 dakika arası -> +0.5 saat FM (8.0 saat)
+       - 50 - 85 dakika arası -> +1.0 saat FM (8.5 saat)
+       - 86 - 109 dakika arası -> +1.5 saat FM (9.0 saat)
+       - 110 - 145 dakika arası -> +2.0 saat FM (9.5 saat)
+       - ve her döngüde aynı kademelerle devam eder.
     """
     g = parse_hm(g_saat_str)
     c = parse_hm(c_saat_str)
     
     if not g or not c:
         if sure_str:
-            raw = parse_time_str(sure_str)
-            if raw > 0:
-                half_steps = round(raw / 0.5)
-                h = max(0.0, half_steps * 0.5)
+            raw = 0.0
+            if ":" in str(sure_str):
+                p = str(sure_str).split(":")
+                try:
+                    raw = float(p[0]) + float(p[1]) / 60.0
+                except:
+                    pass
+            else:
+                try:
+                    raw = float(sure_str)
+                except:
+                    pass
+            if raw >= 7.0:
+                h = 7.5
                 return h, max(0.0, h - 7.5)
+            elif raw > 0:
+                return round(raw * 2) / 2.0, 0.0
         return 0.0, 0.0
         
     g_min = g[0] * 60 + g[1]
     c_min = c[0] * 60 + c[1]
     
-    # Giriş ve çıkış aynı dakikaysa (hatalı basım)
+    # Giriş ve çıkış aynı dakikaysa (hatalı/çift basım)
     if abs(c_min - g_min) <= 3:
         return 0.0, 0.0
         
-    # Gece vardiyası çıkış ertesi güne sarktıysa
     if c_min < g_min:
         c_min += 24 * 60
         
-    # Gündüz / Sabah vardiyası (06:00 - 12:00 arası girişler)
-    if 6 * 60 <= g_min <= 12 * 60:
-        # Sabah kuralı: 08:20 ve öncesi -> 08:00 başlangıç (7.5h taban).
-        # 08:21 sonrası her 30 dakikada 0.5h kesinti
+    # Vardiya Tespiti & Başlangıç/Bitiş Saatleri:
+    # 1. Vardiya: 08:00 - 17:00 / 16:00 (Giriş 06:00 - 11:59)
+    if 6 * 60 <= g_min <= 11 * 60 + 59:
+        shift_end = 17 * 60  # 17:00
+        # 08:20 toleransı
         if g_min <= 8 * 60 + 20:
-            effective_start_min = 8 * 60
+            effective_start = 8 * 60
             base_hours = 7.5
         else:
             diff = g_min - (8 * 60 + 20)
             cuts = (diff - 1) // 30 + 1
-            effective_start_min = 8 * 60 + cuts * 30
+            effective_start = 8 * 60 + cuts * 30
             base_hours = max(0.0, 7.5 - cuts * 0.5)
             
-        shift_end_min = 17 * 60
-        
-        # 17:00 öncesi erken çıkış varsa
-        if c_min < shift_end_min:
-            raw_worked = (c_min - effective_start_min) / 60.0
-            net = max(0.0, raw_worked - 1.0)
+        if c_min < shift_end:
+            raw_w = (c_min - effective_start) / 60.0
+            net = max(0.0, raw_w - 1.0)
             return round(net * 2) / 2.0, 0.0
             
-        # 17:00 sonrası çıkış kademeleri:
-        # 17:00 - 17:25 -> 0 FM
-        # 17:26 - 17:49 -> +0.5 FM (8.0)
-        # 17:50 - 18:25 -> +1.0 FM (8.5)
-        # 18:26 - 18:49 -> +1.5 FM (9.0)
-        # 18:50 - 19:25 -> +2.0 FM (9.5) ...
-        ot_min = c_min - shift_end_min
-        if ot_min <= 25:
-            step = 0
+        ot_min = c_min - shift_end
+
+    # 2. Vardiya: 16:00 - 24:00 (Giriş 12:00 - 19:59)
+    elif 12 * 60 <= g_min <= 19 * 60 + 59:
+        shift_end = 24 * 60  # 00:00
+        if g_min <= 16 * 60 + 20:
+            effective_start = 16 * 60
+            base_hours = 7.5
         else:
-            hours_past = ot_min // 60
-            min_in_hour = ot_min % 60
-            if min_in_hour <= 25:
-                step = hours_past * 2
-            elif min_in_hour <= 49:
-                step = hours_past * 2 + 1
-            else:
-                step = hours_past * 2 + 2
-                
-        fm = step * 0.5
-        total_hours = base_hours + fm
-        return total_hours, fm
+            diff = g_min - (16 * 60 + 20)
+            cuts = (diff - 1) // 30 + 1
+            effective_start = 16 * 60 + cuts * 30
+            base_hours = max(0.0, 7.5 - cuts * 0.5)
+            
+        if c_min < shift_end:
+            raw_w = (c_min - effective_start) / 60.0
+            net = max(0.0, raw_w - 0.5)
+            return round(net * 2) / 2.0, 0.0
+            
+        ot_min = c_min - shift_end
+
+    # 3. Vardiya: 24:00 - 08:00 (Giriş 20:00 - 05:59)
+    else:
+        shift_end = 32 * 60 if g_min >= 20 * 60 else 8 * 60  # 08:00
+        effective_start = 24 * 60 if g_min >= 20 * 60 else 0
+        base_hours = 7.5
+        
+        if c_min < shift_end:
+            raw_w = (c_min - effective_start) / 60.0
+            net = max(0.0, raw_w - 0.5)
+            return round(net * 2) / 2.0, 0.0
+            
+        ot_min = c_min - shift_end
+
+    # Standart Fazla Mesai Kademeleri:
+    if ot_min <= 25:
+        step = 0
+    else:
+        hours_past = ot_min // 60
+        min_in_hour = ot_min % 60
+        if min_in_hour <= 25:
+            step = hours_past * 2
+        elif min_in_hour <= 49:
+            step = hours_past * 2 + 1
+        else:
+            step = hours_past * 2 + 2
+            
+    fm = step * 0.5
+    total = base_hours + fm
+    return total, fm
 
     # İkinci vardiya (15:00 - 24:00) veya Gece vardiyası (20:00 - 06:00 / 22:00 - 08:00)
     raw_duration = (c_min - g_min) / 60.0
@@ -1094,8 +1131,8 @@ def main():
 
     print("==================================================")
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
-    print(" - Sabah Giriş: 08:20'ye kadar tolerans (08:21 ve sonrası 30'ar dk kesintili)")
-    print(" - Akşam Çıkış: 17:26-17:49->8.0h, 17:50-18:25->8.5h, 18:26-18:49->9.0h, 18:50-19:25->9.5h...")
+    print(" - 3 Vardiyalı Sistem: 08-17 / 16-24 / 24-08 (8 saat çalışmaya net 7.5 saat)")
+    print(" - Fazla Mesailer: 26-49 dk (+0.5h), 50-85 dk (+1.0h), 86-109 dk (+1.5h)...")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
     print("==================================================")
