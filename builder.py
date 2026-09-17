@@ -70,6 +70,7 @@ import os
 import shutil
 import unicodedata
 from collections import defaultdict
+from datetime import datetime
 
 # =================================================================================================
 # 1. TÜRKÇE KARAKTER VE KELİME ONARIM SÖZLÜĞÜ
@@ -311,6 +312,21 @@ def parse_hm(t_str):
     except:
         return None
 
+def parse_d_hm(d_str, t_str):
+    """
+    '03.09.2026' ve '08:15:00' metinlerinden datetime nesnesi üretir.
+    """
+    if not d_str or not t_str or ":" not in str(t_str):
+        return None
+    try:
+        p_d = str(d_str).strip().split(".")
+        d, m, y = int(p_d[0]), int(p_d[1]), int(p_d[2])
+        p_t = str(t_str).strip().split(":")
+        h, mn = int(p_t[0]), int(p_t[1])
+        return datetime(y, m, d, h, mn)
+    except:
+        return None
+
 def fmt_hm(mins):
     """
     00:00'dan itibaren geçen toplam dakikayı 'SS:DD' metnine dönüştürür.
@@ -543,8 +559,29 @@ def main():
     missing_punch_records = []
     bonus_audit_records = []
 
-    # Günlük hareketleri topla
+    # Günlük hareketleri topla (Tarih ve süre kontrolü ile)
     raw_daily_rows = defaultdict(lambda: {"rows": [], "meta": {}})
+
+    def add_row_to_day(p_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, row_dict):
+        if not p_tarih:
+            return
+        parts = p_tarih.split(".")
+        try:
+            d = int(parts[0])
+            m = int(parts[1])
+            if m != 9:
+                return
+        except:
+            return
+            
+        name_k = norm_name_key(full_name)
+        k = (name_k, d)
+        if not raw_daily_rows[k]["meta"]:
+            raw_daily_rows[k]["meta"] = {
+                "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
+                "full_name": full_name, "lokasyon": lokasyon, "date_val": p_tarih
+            }
+        raw_daily_rows[k]["rows"].append(row_dict)
 
     for r in range(1, sh_pdks.nrows):
         sira = clean_str(sh_pdks.cell_value(r, 0))
@@ -561,43 +598,38 @@ def main():
         c_saat = clean_str(sh_pdks.cell_value(r, 11))
         puantaj_tarih = clean_str(sh_pdks.cell_value(r, 18)) if sh_pdks.ncols > 18 else ""
         
-        date_val = puantaj_tarih if puantaj_tarih else g_tarih
-        if not full_name or not date_val or full_name == "BBBBBB":
+        if not full_name or full_name == "BBBBBB":
             continue
-            
-        day_num = None
-        if "." in date_val:
-            parts = date_val.split(".")
-            try:
-                d = int(parts[0])
-                m = int(parts[1])
-                if m == 9:
-                    day_num = d
-            except:
-                pass
-                
-        if not day_num:
-            continue
-            
-        name_key = norm_name_key(full_name)
-        k = (name_key, day_num)
+
+        # Tarih ve saatleri tam kontrol et (24+ saatlik hatalı turnike eşleşmelerini ayır)
+        p_date = puantaj_tarih if puantaj_tarih else g_tarih
         
-        if not raw_daily_rows[k]["meta"]:
-            raw_daily_rows[k]["meta"] = {
-                "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
-                "full_name": full_name, "lokasyon": lokasyon, "date_val": date_val
-            }
+        if g_tarih and g_saat and c_tarih and c_saat:
+            dt_g = parse_d_hm(g_tarih, g_saat)
+            dt_c = parse_d_hm(c_tarih, c_saat)
             
-        raw_daily_rows[k]["rows"].append({
-            "g_tarih": g_tarih, "g_saat": g_saat,
-            "c_tarih": c_tarih, "c_saat": c_saat
+            # Eğer turnike aradaki 24+ saatlik 2 farklı günü tek satırda birleştirdiyse:
+            if dt_g and dt_c and (dt_c - dt_g).total_seconds() > 18 * 3600:
+                # 1. Gün (g_tarih): Sadece Giriş basılmış, çıkış basılmamış
+                add_row_to_day(g_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, {
+                    "g_tarih": g_tarih, "g_saat": g_saat, "c_tarih": "", "c_saat": ""
+                })
+                # 2. Gün (c_tarih): Sadece Çıkış/Giriş basılmış
+                add_row_to_day(c_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, {
+                    "g_tarih": c_tarih, "g_saat": c_saat, "c_tarih": "", "c_saat": ""
+                })
+                continue
+                
+        # Normal geçerli hareket
+        target_date = p_date if p_date else (g_tarih if g_tarih else c_tarih)
+        add_row_to_day(target_date, sira, sicil, kart, gun_adi, full_name, lokasyon, {
+            "g_tarih": g_tarih, "g_saat": g_saat, "c_tarih": c_tarih, "c_saat": c_saat
         })
 
     # -------------------------------------------------------------------------
     # Günlük hareketleri analiz et:
-    # - PDKS satırındaki sıralı Giriş - Çıkış ilişkisini koru (Gece vardiyası 16-00 / 18-04)
-    # - Sadece gerçek 'ÜRETİM' ve 'BALIK DOLUM / KESİM' bölümlerine prim uygula
-    # - Çoklu ve eksik basımları güvenli tespit et
+    # - Doğru Giriş ve Çıkış saatlerini tespit et
+    # - Tek basımlarda Giriş/Çıkış sütunlarını ve notlarını kusursuz eşleştir
     # -------------------------------------------------------------------------
     for (name_key, day_num), data in raw_daily_rows.items():
         rows = data["rows"]
@@ -631,7 +663,7 @@ def main():
                 all_punches.append(r_item["c_saat"])
         all_punches_str = ", ".join(all_punches)
         
-        # 1. DURUM: Tek satır var ve hem Giriş hem Çıkış saati dolu (Normal / Gece Vardiyası)
+        # 1. DURUM: Tek satır var ve hem Giriş hem Çıkış saati dolu
         if len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]:
             g_raw = rows[0]["g_saat"]
             c_raw = rows[0]["c_saat"]
@@ -641,15 +673,14 @@ def main():
             mesai = min(7.5, sure)
             fiili_sure = sure
             
-        # 2. DURUM: Birden fazla satır var (Çoklu basım veya parçalı hareket)
-        elif len(rows) > 1 or (len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]):
-            # Tüm geçerli giriş ve çıkışları topla
+        # 2. DURUM: Birden fazla satır var (Çoklu basım)
+        elif len(rows) > 1:
             g_list = [r_item["g_saat"] for r_item in rows if r_item["g_saat"]]
             c_list = [r_item["c_saat"] for r_item in rows if r_item["c_saat"]]
             
             if g_list and c_list:
-                g_raw = g_list[0] # İlk giriş
-                c_raw = c_list[-1] # Son çıkış
+                g_raw = g_list[0]
+                c_raw = c_list[-1]
                 g_display = g_raw[:5] if len(g_raw) >= 5 else g_raw
                 c_display = c_raw[:5] if len(c_raw) >= 5 else c_raw
                 sure, fazla = calc_factory_worked_hours(g_raw, c_raw)
@@ -660,22 +691,31 @@ def main():
                     status_type = "Çoklu Basım (Min/Max)"
                     note = f"{date_val} Çoklu Basım: Giriş {g_display}, Çıkış {c_display} ({fmt_hours_tr(sure)} saat)"
             elif g_list:
-                # Sadece girişler var
+                # Sadece sabah/akşam giriş sütununda hareket var
                 g_raw = g_list[0]
-                g_display = g_raw[:5]
-                c_display = "-"
                 is_audit = True
                 hm = parse_hm(g_raw)
                 tm = hm[0] * 60 + hm[1] if hm else 480
+                
                 if tm <= 12 * 60 + 30:
+                    g_display = g_raw[:5]
+                    c_display = "-"
                     status_type = "Çıkış Basılmadı"
                     sure, fazla, mesai = 7.5, 0.0, 7.5
                     note = f"{date_val} Giriş: {g_display} | Çıkış Basılmadı (7,5 saat yazıldı)"
-                else:
-                    status_type = "Giriş Basılmadı (FM Korundu)"
+                elif 12 * 60 + 30 < tm < 20 * 60:
+                    g_display = "-"
+                    c_display = g_raw[:5]
                     sure, fazla = calc_factory_worked_hours("08:00", g_raw)
                     mesai = min(7.5, sure)
-                    note = f"{date_val} Çıkış: {g_display} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
+                    status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
+                    note = f"{date_val} Çıkış: {c_display} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
+                else:
+                    g_display = g_raw[:5]
+                    c_display = "-"
+                    status_type = "Gece Girişi (Çıkış Basılmadı)"
+                    sure, fazla, mesai = 7.5, 0.0, 7.5
+                    note = f"{date_val} Giriş: {g_display} | Gece Çıkış Basılmadı (7,5 saat yazıldı)"
                 fiili_sure = sure
             else:
                 sure, fazla, mesai, fiili_sure = 0.0, 0.0, 0.0, 0.0
@@ -689,12 +729,14 @@ def main():
             tm = hm[0] * 60 + hm[1] if hm else 480
             t_s = t_raw[:5] if len(t_raw) >= 5 else t_raw
             
+            # Sabah basımı (Giriş var, Çıkış yok)
             if tm <= 12 * 60 + 30:
                 g_display = t_s
                 c_display = "-"
                 status_type = "Çıkış Basılmadı"
                 sure, fazla, mesai = 7.5, 0.0, 7.5
                 note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı (7,5 saat yazıldı)"
+            # Akşam basımı (Çıkış var, Giriş yok)
             elif 12 * 60 + 30 < tm < 20 * 60:
                 g_display = "-"
                 c_display = t_s
@@ -702,12 +744,13 @@ def main():
                 mesai = min(7.5, sure)
                 status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
                 note = f"{date_val} Çıkış: {t_s} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
+            # Gece vardiyası girişi (Giriş var, Çıkış yok)
             else:
                 g_display = t_s
                 c_display = "-"
-                status_type = "Gece Vardiyası Tek Basım"
+                status_type = "Gece Girişi (Çıkış Basılmadı)"
                 sure, fazla, mesai = 7.5, 0.0, 7.5
-                note = f"{date_val} Basım: {t_s} | Tek Basım (7,5 saat yazıldı)"
+                note = f"{date_val} Giriş: {t_s} | Gece Çıkış Basılmadı (7,5 saat yazıldı)"
             fiili_sure = sure
         else:
             sure, fazla, mesai, fiili_sure = 0.0, 0.0, 0.0, 0.0
