@@ -544,7 +544,7 @@ def main():
     bonus_audit_records = []
 
     # Günlük hareketleri topla
-    raw_daily_punches = defaultdict(lambda: {"punches": [], "meta": {}})
+    raw_daily_rows = defaultdict(lambda: {"rows": [], "meta": {}})
 
     for r in range(1, sh_pdks.nrows):
         sira = clean_str(sh_pdks.cell_value(r, 0))
@@ -582,26 +582,25 @@ def main():
         name_key = norm_name_key(full_name)
         k = (name_key, day_num)
         
-        if not raw_daily_punches[k]["meta"]:
-            raw_daily_punches[k]["meta"] = {
+        if not raw_daily_rows[k]["meta"]:
+            raw_daily_rows[k]["meta"] = {
                 "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
                 "full_name": full_name, "lokasyon": lokasyon, "date_val": date_val
             }
             
-        if g_saat:
-            raw_daily_punches[k]["punches"].append(g_saat)
-        if c_saat:
-            raw_daily_punches[k]["punches"].append(c_saat)
+        raw_daily_rows[k]["rows"].append({
+            "g_tarih": g_tarih, "g_saat": g_saat,
+            "c_tarih": c_tarih, "c_saat": c_saat
+        })
 
     # -------------------------------------------------------------------------
     # Günlük hareketleri analiz et:
-    # - Mükerrer 5 dk filtresi
-    # - Min/Max çoklu basım birleştirme
-    # - Özel Bölüm Primi (Balık Dolum/Kesim >=10h -> +2h, Üretim >=12h -> +4h)
-    # - Tek basımlarda fazla mesai korumalı akıllı tahmin
+    # - PDKS satırındaki sıralı Giriş - Çıkış ilişkisini koru (Gece vardiyası 16-00 / 18-04)
+    # - Sadece gerçek 'ÜRETİM' ve 'BALIK DOLUM / KESİM' bölümlerine prim uygula
+    # - Çoklu ve eksik basımları güvenli tespit et
     # -------------------------------------------------------------------------
-    for (name_key, day_num), data in raw_daily_punches.items():
-        punches = data["punches"]
+    for (name_key, day_num), data in raw_daily_rows.items():
+        rows = data["rows"]
         meta = data["meta"]
         full_name = meta["full_name"]
         date_val = meta["date_val"]
@@ -611,19 +610,11 @@ def main():
         lokasyon = meta["lokasyon"]
         dept_name = emp_dept_map.get(name_key, "").upper()
         
-        times_min = []
-        for p in punches:
-            hm = parse_hm(p)
-            if hm:
-                times_min.append(hm[0] * 60 + hm[1])
-        times_min = sorted(list(set(times_min)))
+        # Bölüm ismini standartlaştır (Türkçe karakter duyarlı)
+        norm_dept = dept_name.replace("İ", "I").replace("Ü", "U").replace("Ş", "S").replace("Ğ", "G").replace("Ç", "C").replace("Ö", "O").strip()
+        is_balik_dk = ("BALIK DOLUM" in norm_dept) or ("BALIK KESIM" in norm_dept) or ("BALIK KES" in norm_dept)
+        is_uretim = (norm_dept == "URETIM") or ("URETIM ELEMANI" in norm_dept) or ("KONSERVE URETIM" in norm_dept)
         
-        # 5 dakikalık turnike çift basım filtrelemesi (Debounce)
-        dedup_times = []
-        for tm in times_min:
-            if not dedup_times or (tm - dedup_times[-1]) > 5:
-                dedup_times.append(tm)
-                
         is_audit = False
         is_bonus = False
         bonus_hours = 0.0
@@ -631,83 +622,114 @@ def main():
         note = ""
         g_display = "-"
         c_display = "-"
-        all_punches_str = ", ".join(punches)
+        all_punches = []
         
-        # 1. DURUM: En az 2 farklı basım saati var
-        if len(dedup_times) >= 2:
-            min_m, max_m = dedup_times[0], dedup_times[-1]
-            min_s, max_s = fmt_hm(min_m), fmt_hm(max_m)
-            g_display, c_display = min_s, max_s
-            sure, fazla = calc_factory_worked_hours(min_s, max_s)
+        for r_item in rows:
+            if r_item["g_saat"]:
+                all_punches.append(r_item["g_saat"])
+            if r_item["c_saat"]:
+                all_punches.append(r_item["c_saat"])
+        all_punches_str = ", ".join(all_punches)
+        
+        # 1. DURUM: Tek satır var ve hem Giriş hem Çıkış saati dolu (Normal / Gece Vardiyası)
+        if len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]:
+            g_raw = rows[0]["g_saat"]
+            c_raw = rows[0]["c_saat"]
+            g_display = g_raw[:5] if len(g_raw) >= 5 else g_raw
+            c_display = c_raw[:5] if len(c_raw) >= 5 else c_raw
+            sure, fazla = calc_factory_worked_hours(g_raw, c_raw)
             mesai = min(7.5, sure)
             fiili_sure = sure
             
-            # Gün içinde 2'den fazla basım yapılmışsa (Çoklu Basım)
-            if len(punches) > 2 or len(dedup_times) > 2:
+        # 2. DURUM: Birden fazla satır var (Çoklu basım veya parçalı hareket)
+        elif len(rows) > 1 or (len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]):
+            # Tüm geçerli giriş ve çıkışları topla
+            g_list = [r_item["g_saat"] for r_item in rows if r_item["g_saat"]]
+            c_list = [r_item["c_saat"] for r_item in rows if r_item["c_saat"]]
+            
+            if g_list and c_list:
+                g_raw = g_list[0] # İlk giriş
+                c_raw = c_list[-1] # Son çıkış
+                g_display = g_raw[:5] if len(g_raw) >= 5 else g_raw
+                c_display = c_raw[:5] if len(c_raw) >= 5 else c_raw
+                sure, fazla = calc_factory_worked_hours(g_raw, c_raw)
+                mesai = min(7.5, sure)
+                fiili_sure = sure
+                if len(all_punches) > 2:
+                    is_audit = True
+                    status_type = "Çoklu Basım (Min/Max)"
+                    note = f"{date_val} Çoklu Basım: Giriş {g_display}, Çıkış {c_display} ({fmt_hours_tr(sure)} saat)"
+            elif g_list:
+                # Sadece girişler var
+                g_raw = g_list[0]
+                g_display = g_raw[:5]
+                c_display = "-"
                 is_audit = True
-                status_type = "Çoklu Basım (Min/Max)"
-                note = f"{date_val} Çoklu Basım: Giriş {min_s}, Çıkış {max_s} ({fmt_hours_tr(sure)} saat)"
-
-            # -----------------------------------------------------------------
-            # ÖZEL BÖLÜM PRİMİ HESAPLAMALARI:
-            # 1. Balık Dolum & Balık Kesim (>= 10.0 saat -> +2.0 saat Prim)
-            # 2. Üretim Ekibi (>= 12.0 saat -> +4.0 saat Prim)
-            # -----------------------------------------------------------------
-            is_balik_dk = any(x in dept_name for x in ["BALIK DOLUM", "BALIK KES", "BALIK KESIM"])
-            is_uretim = any(x in dept_name for x in ["URETIM", "RETM", "KONSERVE"])
-            
-            if is_balik_dk and fiili_sure >= 10.0:
-                bonus_hours = 2.0
-                sure += bonus_hours
-                fazla += bonus_hours
-                is_bonus = True
-                prim_aciklama = f"{dept_name} Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s yazıldı (+{fmt_hours_tr(bonus_hours)}s Prim)"
-                note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
+                hm = parse_hm(g_raw)
+                tm = hm[0] * 60 + hm[1] if hm else 480
+                if tm <= 12 * 60 + 30:
+                    status_type = "Çıkış Basılmadı"
+                    sure, fazla, mesai = 7.5, 0.0, 7.5
+                    note = f"{date_val} Giriş: {g_display} | Çıkış Basılmadı (7,5 saat yazıldı)"
+                else:
+                    status_type = "Giriş Basılmadı (FM Korundu)"
+                    sure, fazla = calc_factory_worked_hours("08:00", g_raw)
+                    mesai = min(7.5, sure)
+                    note = f"{date_val} Çıkış: {g_display} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
+                fiili_sure = sure
+            else:
+                sure, fazla, mesai, fiili_sure = 0.0, 0.0, 0.0, 0.0
                 
-            elif is_uretim and fiili_sure >= 12.0:
-                bonus_hours = 4.0
-                sure += bonus_hours
-                fazla += bonus_hours
-                is_bonus = True
-                prim_aciklama = f"Üretim Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s yazıldı (+{fmt_hours_tr(bonus_hours)}s Prim)"
-                note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
-
-        # 2. DURUM: Sadece 1 basım var (Eksik / Unutulan Basım)
-        elif len(dedup_times) == 1:
+        # 3. DURUM: Tek bir basım var (Eksik Basım)
+        elif len(rows) == 1:
+            r_single = rows[0]
+            t_raw = r_single["g_saat"] if r_single["g_saat"] else r_single["c_saat"]
             is_audit = True
-            tm = dedup_times[0]
-            t_s = fmt_hm(tm)
+            hm = parse_hm(t_raw)
+            tm = hm[0] * 60 + hm[1] if hm else 480
+            t_s = t_raw[:5] if len(t_raw) >= 5 else t_raw
             
-            # Sabah gelişi var (12:30'dan önce) -> Çıkış basılmadı
             if tm <= 12 * 60 + 30:
                 g_display = t_s
                 c_display = "-"
                 status_type = "Çıkış Basılmadı"
-                sure = 7.5
-                fazla = 0.0
-                mesai = 7.5
-                note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
-                
-            # Öğleden sonra/akşam çıkışı var (12:30 - 20:00 arası) -> Giriş basılmadı (FM Korundu)
+                sure, fazla, mesai = 7.5, 0.0, 7.5
+                note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı (7,5 saat yazıldı)"
             elif 12 * 60 + 30 < tm < 20 * 60:
                 g_display = "-"
                 c_display = t_s
-                sure, fazla = calc_factory_worked_hours("08:00", t_s)
+                sure, fazla = calc_factory_worked_hours("08:00", t_raw)
                 mesai = min(7.5, sure)
                 status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
                 note = f"{date_val} Çıkış: {t_s} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
-                
-            # Gece basımı
             else:
                 g_display = t_s
                 c_display = "-"
                 status_type = "Gece Vardiyası Tek Basım"
-                sure = 7.5
-                fazla = 0.0
-                mesai = 7.5
-                note = f"{date_val} Basım: {t_s} | Tek Basım ({fmt_hours_tr(sure)} saat yazıldı)"
+                sure, fazla, mesai = 7.5, 0.0, 7.5
+                note = f"{date_val} Basım: {t_s} | Tek Basım (7,5 saat yazıldı)"
+            fiili_sure = sure
         else:
-            sure, fazla, mesai = 0.0, 0.0, 0.0
+            sure, fazla, mesai, fiili_sure = 0.0, 0.0, 0.0, 0.0
+            
+        # ---------------------------------------------------------------------
+        # KESİN BÖLÜM PRİMİ KONTROLÜ (Sadece Balık Dolum/Kesim ve Üretim için):
+        # ---------------------------------------------------------------------
+        if is_balik_dk and fiili_sure >= 10.0:
+            bonus_hours = 2.0
+            sure += bonus_hours
+            fazla += bonus_hours
+            is_bonus = True
+            prim_aciklama = f"{dept_name} Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s (+2,0s Prim)"
+            note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
+            
+        elif is_uretim and fiili_sure >= 12.0:
+            bonus_hours = 4.0
+            sure += bonus_hours
+            fazla += bonus_hours
+            is_bonus = True
+            prim_aciklama = f"Üretim Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s (+4,0s Prim)"
+            note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
 
         # Personel günlük çalışma sözlüğüne kaydet
         if name_key not in emp_pdks_daily:
