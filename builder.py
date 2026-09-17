@@ -4,9 +4,12 @@ Puantaj ve PDKS Sistemi Uçtan Uca Yapılandırma ve Modernizasyon Scripti
 Fide Konserve Gıda San. A.Ş.
 
 Bu script:
-1. 'pdks.xls' dosyasındaki turnike hareketlerini okur ve analiz eder.
-2. 'puantaj.xls' dosyasındaki personel, bordro, icra ve rapor verilerini harmanlar.
-3. Tüm formülleri (SUM, COUNTIF, IF, MIN, VLOOKUP), biçimlendirmeleri, renkleri
+1. 'pdks.xls' dosyasındaki turnike hareketlerini okur, mükerrer basımları filtreler,
+   çoklu basımlarda Min/Max kuralını uygular, eksik basımlarda akıllı tahmin ve fazla mesai koruması yapar.
+2. İnsan kontrolü gerektiren tüm durumları (eksik giriş, eksik çıkış, çoklu basım) turuncu renkle işaretler,
+   ayrıntılı hücre notu ekler ve 'Eksik_Basim_Raporu' sayfasında denetime sunar.
+3. 'puantaj.xls' dosyasındaki personel, bordro, icra ve rapor verilerini harmanlar.
+4. Tüm formülleri (SUM, COUNTIF, IF, MIN, VLOOKUP), biçimlendirmeleri, renkleri
    ve Türkçe karakterleri eksiksiz içeren modern 'puantaj.xlsx' dosyasını üretir.
 """
 import xlrd
@@ -18,6 +21,7 @@ import re
 import os
 import shutil
 import unicodedata
+from collections import defaultdict
 
 # Tam kelime ve isim onarım sözlüğü
 WORD_REPLACEMENTS = {
@@ -232,6 +236,11 @@ def parse_hm(t_str):
     except:
         return None
 
+def fmt_hm(mins):
+    h = (mins // 60) % 24
+    m = mins % 60
+    return f"{h:02d}:{m:02d}"
+
 def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=False):
     """
     Fabrika 3 Vardiyalı Çalışma & Fazla Mesai Kuralları:
@@ -239,10 +248,9 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
        - 1. Vardiya (Gündüz): 08:00 - 16:00 (8-4) / 08:00 - 17:00 (8-5)
        - 2. Vardiya (Akşam) : 16:00 - 24:00 (16-24)
        - 3. Vardiya (Gece)  : 24:00 - 08:00 (24-8 / 00:00 - 08:00)
-    2. Temel Mesai & Eksik Basım Kuralı:
+    2. Temel Mesai:
        - Kişiler vardiyalarını tamamladıklarında net 7.5 saat mesai yazılır.
-       - Giriş veya çıkış basılmamışsa (tek basım) veya çift basım varsa varsayılan 7.5 saat yazılır.
-       - Erken gelişler mesaiye sayılmaz (08:00 başlangıç esas alınır).
+       - Erken gelişler mesaiye sayılmaz (vardiya başı esas alınır).
     3. Sabah Giriş Toleransı (8-5 & 8-4):
        - 08:20'ye kadar gelenler: Kesintisiz 08:00 iş başı kabul edilir (7.5 saat).
        - 08:21 - 08:50 arası gelenler: 30 dk kesinti ile 08:30 iş başı (7.0 saat).
@@ -260,36 +268,13 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
     g = parse_hm(g_saat_str)
     c = parse_hm(c_saat_str)
     
-    # 1. Hiç basım yoksa
-    if not g and not c:
-        if sure_str:
-            raw = 0.0
-            if ":" in str(sure_str):
-                p = str(sure_str).split(":")
-                try:
-                    raw = float(p[0]) + float(p[1]) / 60.0
-                except:
-                    pass
-            else:
-                try:
-                    raw = float(sure_str)
-                except:
-                    pass
-            if raw >= 7.0:
-                return 7.5, max(0.0, 7.5 - 7.5)
-            elif raw > 0:
-                return round(raw * 2) / 2.0, 0.0
-        return 0.0, 0.0
-
-    # 2. Tek basım (Giriş var çıkış yok VEYA Çıkış var giriş yok):
-    # Fabrika kuralı: Eksik basımlarda personelin hak kaybı yaşamaması için varsayılan 7.5 saat yazılır.
     if not g or not c:
         return 7.5, 0.0
         
     g_min = g[0] * 60 + g[1]
     c_min = c[0] * 60 + c[1]
     
-    # 3. Giriş ve çıkış aynı dakikadaysa (çift basım / akşam kart basılmamış)
+    # Giriş ve çıkış aynı dakikadaysa (çift basım / çıkış basılmamış)
     if abs(c_min - g_min) <= 3:
         return 7.5, 0.0
         
@@ -299,7 +284,6 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
     # Vardiya Tespiti & Başlangıç/Bitiş Saatleri:
     # 1. GÜNDÜZ VARDİYASI: 08:00 - 17:00 (8-5) veya 08:00 - 16:00 (8-4) (Giriş 06:00 - 11:59)
     if 6 * 60 <= g_min <= 11 * 60 + 59:
-        # 08:20 toleransı
         if g_min <= 8 * 60 + 20:
             effective_start = 8 * 60
             base_hours = 7.5
@@ -388,12 +372,15 @@ def main():
     wb_pdks = xlrd.open_workbook("pdks.xls", encoding_override="cp1254")
 
     # ==========================================
-    # 1. PDKS HAREKETLERİNİ İŞLEME
+    # 1. PDKS HAREKETLERİNİ İŞLEME & AKILLI ANALİZ
     # ==========================================
     sh_pdks = wb_pdks.sheet_by_name("HarList")
     pdks_records = []
     emp_pdks_daily = {}
     missing_punch_records = []
+
+    # Günlük hareketleri topla
+    raw_daily_punches = defaultdict(lambda: {"punches": [], "meta": {}})
 
     for r in range(1, sh_pdks.nrows):
         sira = clean_str(sh_pdks.cell_value(r, 0))
@@ -412,58 +399,9 @@ def main():
         puantaj_tarih = clean_str(sh_pdks.cell_value(r, 18)) if sh_pdks.ncols > 18 else ""
         
         date_val = puantaj_tarih if puantaj_tarih else g_tarih
-        
-        # Eksik basım tespiti (Giriş var çıkış yok VEYA Çıkış var giriş yok VEYA Çift basım)
-        g_hm = parse_hm(g_saat)
-        c_hm = parse_hm(c_saat)
-        missing_type = None
-        note = ""
-        
-        if g_hm and not c_hm:
-            if g_hm[0] >= 15:
-                missing_type = "Giriş Basılmadı"
-                note = f"{date_val} Çıkış: {g_saat} | Giriş Basılmadı (7.5h yazıldı)"
-            else:
-                missing_type = "Çıkış Basılmadı"
-                note = f"{date_val} Giriş: {g_saat} | Çıkış Basılmadı (7.5h yazıldı)"
-        elif c_hm and not g_hm:
-            missing_type = "Giriş Basılmadı"
-            note = f"{date_val} Çıkış: {c_saat} | Giriş Basılmadı (7.5h yazıldı)"
-        elif g_hm and c_hm and abs((c_hm[0]*60 + c_hm[1]) - (g_hm[0]*60 + g_hm[1])) <= 3:
-            missing_type = "Çift/Hatalı Basım"
-            note = f"{date_val} Giriş: {g_saat} | Çıkış Basılmadı (7.5h yazıldı)"
-            
-        if missing_type and full_name and full_name != "BBBBBB":
-            missing_punch_records.append({
-                "sno": len(missing_punch_records) + 1,
-                "tarih": date_val,
-                "gun_adi": gun_adi,
-                "kart": kart,
-                "sicil": sicil,
-                "ad_soyad": full_name,
-                "lokasyon": lokasyon,
-                "g_saat": g_saat if g_saat else "-",
-                "c_saat": c_saat if c_saat else "-",
-                "hata": missing_type,
-                "yazilan_saat": 7.5,
-                "durum": "İK İncelemesinde"
-            })
-        
-        # Fabrika kurallarına göre çalışma saati ve fazla mesai hesaplama
-        sure, fazla = calc_factory_worked_hours(g_saat, c_saat, sure_str, is_office=False)
-        mesai = min(7.5, sure)
-        
-        if not full_name:
+        if not full_name or not date_val or full_name == "BBBBBB":
             continue
-        
-        pdks_records.append({
-            "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
-            "ad_soyad": full_name, "lokasyon": lokasyon, "g_tarih": g_tarih,
-            "g_saat": g_saat, "c_tarih": c_tarih, "c_saat": c_saat,
-            "sure": f"{sure:.1f}", "mesai": f"{mesai:.1f}", "fazla": f"{fazla:.1f}",
-            "puantaj_tarih": puantaj_tarih
-        })
-        
+            
         day_num = None
         if "." in date_val:
             parts = date_val.split(".")
@@ -475,20 +413,140 @@ def main():
             except:
                 pass
                 
-        if day_num:
-            name_key = norm_name_key(full_name)
-            if name_key not in emp_pdks_daily:
-                emp_pdks_daily[name_key] = {}
-            if day_num not in emp_pdks_daily[name_key]:
-                emp_pdks_daily[name_key][day_num] = {"sure": 0.0, "normal": 0.0, "fazla": 0.0, "missing_type": None, "note": ""}
-            emp_pdks_daily[name_key][day_num]["sure"] += sure
-            emp_pdks_daily[name_key][day_num]["normal"] += mesai
-            emp_pdks_daily[name_key][day_num]["fazla"] += fazla
-            if missing_type:
-                emp_pdks_daily[name_key][day_num]["missing_type"] = missing_type
-                emp_pdks_daily[name_key][day_num]["note"] = note
+        if not day_num:
+            continue
+            
+        name_key = norm_name_key(full_name)
+        k = (name_key, day_num)
+        
+        if not raw_daily_punches[k]["meta"]:
+            raw_daily_punches[k]["meta"] = {
+                "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
+                "full_name": full_name, "lokasyon": lokasyon, "date_val": date_val
+            }
+            
+        if g_saat:
+            raw_daily_punches[k]["punches"].append(g_saat)
+        if c_saat:
+            raw_daily_punches[k]["punches"].append(c_saat)
 
-    print(f"   -> PDKS'den {len(pdks_records)} turnike kaydı ({len(missing_punch_records)} eksik basım) ve {len(emp_pdks_daily)} personel okundu.")
+    # Günlük hareketleri analiz et (Min/Max, Tek Basım, Fazla Mesai Koruma)
+    for (name_key, day_num), data in raw_daily_punches.items():
+        punches = data["punches"]
+        meta = data["meta"]
+        full_name = meta["full_name"]
+        date_val = meta["date_val"]
+        gun_adi = meta["gun_adi"]
+        kart = meta["kart"]
+        sicil = meta["sicil"]
+        lokasyon = meta["lokasyon"]
+        
+        times_min = []
+        for p in punches:
+            hm = parse_hm(p)
+            if hm:
+                times_min.append(hm[0] * 60 + hm[1])
+        times_min = sorted(list(set(times_min)))
+        
+        # 5 dakikalık turnike çift basım filtrelemesi
+        dedup_times = []
+        for tm in times_min:
+            if not dedup_times or (tm - dedup_times[-1]) > 5:
+                dedup_times.append(tm)
+                
+        is_audit = False
+        status_type = None
+        note = ""
+        g_display = "-"
+        c_display = "-"
+        all_punches_str = ", ".join(punches)
+        
+        # 1. Durum: En az 2 farklı basım saati var
+        if len(dedup_times) >= 2:
+            min_m, max_m = dedup_times[0], dedup_times[-1]
+            min_s, max_s = fmt_hm(min_m), fmt_hm(max_m)
+            g_display, c_display = min_s, max_s
+            sure, fazla = calc_factory_worked_hours(min_s, max_s)
+            mesai = min(7.5, sure)
+            
+            # Eğer gün içinde 2'den fazla basım yapılmışsa (Çoklu Basım)
+            if len(punches) > 2 or len(dedup_times) > 2:
+                is_audit = True
+                status_type = "Çoklu Basım (Min/Max)"
+                note = f"{date_val} Çoklu Basım: Giriş {min_s}, Çıkış {max_s} ({sure:.1f}h yazıldı)"
+                
+        # 2. Durum: Sadece 1 basım var (Eksik / Unutulan Basım)
+        elif len(dedup_times) == 1:
+            is_audit = True
+            tm = dedup_times[0]
+            t_s = fmt_hm(tm)
+            
+            # Sabah gelişi var (12:30'dan önce) -> Çıkış basılmadı
+            if tm <= 12 * 60 + 30:
+                g_display = t_s
+                c_display = "-"
+                status_type = "Çıkış Basılmadı"
+                sure = 7.5
+                fazla = 0.0
+                mesai = 7.5
+                note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı (7.5h yazıldı)"
+                
+            # Öğleden sonra/akşam çıkışı var (12:30 - 20:00 arası) -> Giriş basılmadı (FM Korundu)
+            elif 12 * 60 + 30 < tm < 20 * 60:
+                g_display = "-"
+                c_display = t_s
+                sure, fazla = calc_factory_worked_hours("08:00", t_s)
+                mesai = min(7.5, sure)
+                status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
+                note = f"{date_val} Çıkış: {t_s} | Giriş Basılmadı ({sure:.1f}h yazıldı)"
+                
+            # Gece basımı
+            else:
+                g_display = t_s
+                c_display = "-"
+                status_type = "Gece Vardiyası Tek Basım"
+                sure = 7.5
+                fazla = 0.0
+                mesai = 7.5
+                note = f"{date_val} Basım: {t_s} | Tek Basım (7.5h yazıldı)"
+        else:
+            sure, fazla, mesai = 0.0, 0.0, 0.0
+
+        if name_key not in emp_pdks_daily:
+            emp_pdks_daily[name_key] = {}
+        emp_pdks_daily[name_key][day_num] = {
+            "sure": sure, "normal": mesai, "fazla": fazla,
+            "missing_type": status_type, "note": note, "is_audit": is_audit
+        }
+        
+        # İnsan kontrolü gerektiren durumları rapora ekle
+        if is_audit and full_name:
+            missing_punch_records.append({
+                "sno": len(missing_punch_records) + 1,
+                "tarih": date_val,
+                "gun_adi": gun_adi,
+                "kart": kart,
+                "sicil": sicil,
+                "ad_soyad": full_name,
+                "lokasyon": lokasyon,
+                "g_saat": g_display,
+                "c_saat": c_display,
+                "tum_hareketler": all_punches_str,
+                "hata": status_type,
+                "yazilan_saat": sure,
+                "fazla_mesai": fazla,
+                "durum": "İK / Amir Onayında"
+            })
+            
+        pdks_records.append({
+            "sira": meta["sira"], "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
+            "ad_soyad": full_name, "lokasyon": lokasyon, "g_tarih": date_val,
+            "g_saat": g_display, "c_tarih": date_val, "c_saat": c_display,
+            "sure": f"{sure:.1f}", "mesai": f"{mesai:.1f}", "fazla": f"{fazla:.1f}",
+            "puantaj_tarih": date_val
+        })
+
+    print(f"   -> PDKS'den {len(pdks_records)} günlük hareket ({len(missing_punch_records)} insan kontrolü kaydı) ve {len(emp_pdks_daily)} personel işlendi.")
 
     # ==========================================
     # 2. RAPORLAR SAYFASI
@@ -682,7 +740,7 @@ def main():
     fill_overtime = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     fill_net = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
     fill_deduct = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-    fill_missing = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid") # Eksik basım uyarı dolgusu
+    fill_missing = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid") # İnsan kontrolü uyarı dolgusu (Açık Turuncu)
     fill_zebra = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
     fill_total = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 
@@ -851,11 +909,13 @@ def main():
                 fazla = day_info["fazla"]
                 cell.value = hours if hours > 0 else 0
                 
-                # Eksik basım uyarısı (Turuncu/Kırmızı arka plan + Bilgi Notu)
-                if day_info.get("missing_type") and not is_pazar:
+                # İnsan kontrolü uyarısı (Turuncu arka plan + Bilgi Notu)
+                if day_info.get("is_audit") and not is_pazar:
                     cell.fill = fill_missing
                     if day_info.get("note"):
                         cell.comment = Comment(day_info["note"], "PDKS Sistemi")
+                    if cell.value == 0 or cell.value == 0.0:
+                        cell.value = 7.5
                         
                 if is_pazar:
                     emp_ot_sunday += hours
@@ -969,15 +1029,26 @@ def main():
     ws_p.freeze_panes = "D4"
 
     # ----------------------------------------------------
-    # SAYFA 2: Eksik_Basim_Raporu (Hatalı / Tek Basımlı Kayıtlar)
+    # SAYFA 2: Eksik_Basim_Raporu (İstisna & İnsan Kontrolü Raporu)
     # ----------------------------------------------------
     ws_miss = wb_new.create_sheet(title="Eksik_Basim_Raporu")
     ws_miss.views.sheetView[0].showGridLines = True
 
     miss_headers = [
-        ("Sıra No", 8), ("Tarih", 12), ("Gün", 12), ("Kart No", 10), ("Adı Soyadı", 22),
-        ("Lokasyon / Güzergah", 22), ("Giriş Saati", 12), ("Çıkış Saati", 12),
-        ("Hata Durumu", 20), ("Puantaja Yazılan Süre", 20), ("İK / Amir Onayı", 18)
+        ("Sıra No", 8),
+        ("Tarih", 12),
+        ("Gün", 12),
+        ("Kart No", 10),
+        ("Sicil No", 10),
+        ("Adı Soyadı", 22),
+        ("Bölüm / Lokasyon", 20),
+        ("Tespit Edilen Giriş", 15),
+        ("Tespit Edilen Çıkış", 15),
+        ("Tüm Basım Hareketleri", 22),
+        ("İnceleme Nedeni (Hata Türü)", 26),
+        ("Puantaja Yazılan Saat", 18),
+        ("Fazla Mesai (Saat)", 16),
+        ("İK / Amir Onayı & Notu", 22)
     ]
     ws_miss.row_dimensions[1].height = 25
     for c_idx, (h_text, w) in enumerate(miss_headers, start=1):
@@ -995,25 +1066,28 @@ def main():
         ws_miss[f"B{r_idx}"] = mp["tarih"]
         ws_miss[f"C{r_idx}"] = mp["gun_adi"]
         ws_miss[f"D{r_idx}"] = mp["kart"]
-        ws_miss[f"E{r_idx}"] = mp["ad_soyad"]
-        ws_miss[f"F{r_idx}"] = mp["lokasyon"]
-        ws_miss[f"G{r_idx}"] = mp["g_saat"]
-        ws_miss[f"H{r_idx}"] = mp["c_saat"]
-        ws_miss[f"I{r_idx}"] = mp["hata"]
-        ws_miss[f"J{r_idx}"] = mp["yazilan_saat"]
-        ws_miss[f"K{r_idx}"] = mp["durum"]
+        ws_miss[f"E{r_idx}"] = mp["sicil"]
+        ws_miss[f"F{r_idx}"] = mp["ad_soyad"]
+        ws_miss[f"G{r_idx}"] = mp["lokasyon"]
+        ws_miss[f"H{r_idx}"] = mp["g_saat"]
+        ws_miss[f"I{r_idx}"] = mp["c_saat"]
+        ws_miss[f"J{r_idx}"] = mp["tum_hareketler"]
+        ws_miss[f"K{r_idx}"] = mp["hata"]
+        ws_miss[f"L{r_idx}"] = mp["yazilan_saat"]
+        ws_miss[f"M{r_idx}"] = mp["fazla_mesai"]
+        ws_miss[f"N{r_idx}"] = mp["durum"]
         
-        for c_idx in range(1, 12):
+        for c_idx in range(1, 15):
             cl = get_column_letter(c_idx)
             ws_miss[f"{cl}{r_idx}"].border = border_cell
             ws_miss[f"{cl}{r_idx}"].font = font_data
-            if c_idx == 9: # Hata sütunu
+            if c_idx == 11: # Hata türü sütunu
                 ws_miss[f"{cl}{r_idx}"].fill = fill_missing
                 ws_miss[f"{cl}{r_idx}"].font = Font(name=FONT_FAMILY, size=9, bold=True, color="C00000")
-            elif c_idx == 10:
+            elif c_idx in (12, 13):
                 ws_miss[f"{cl}{r_idx}"].number_format = "0.0"
                 ws_miss[f"{cl}{r_idx}"].alignment = align_center
-            if c_idx not in (5, 6):
+            if c_idx not in (6, 7, 10):
                 ws_miss[f"{cl}{r_idx}"].alignment = align_center
 
     # ----------------------------------------------------
@@ -1265,8 +1339,9 @@ def main():
     print("==================================================")
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
     print(" - 8-5 Normal Çalışma ve 3 Vardiya (8-4 / 16-24 / 24-8) tam destekli")
-    print(f" - Eksik Basım Yönetimi: {len(missing_punch_records)} hatalı basım 'Eksik_Basim_Raporu' sayfasına işlendi")
-    print("   (Puantaj tablosunda bu hücrelere 7.5 saat yazıldı, Turuncu renk ve Bilgi Notu eklendi)")
+    print(f" - İnsan Kontrolü Yönetimi: {len(missing_punch_records)} istisna/hata kaydı 'Eksik_Basim_Raporu' sayfasına işlendi")
+    print("   (Puantaj tablosunda bu hücreler Turuncu renk ve Bilgi Notu ile işaretlendi)")
+    print(" - Çoklu Basımlarda Min/Max filtresi uygulandı, eksik çıkışlarda 7.5h yazıldı, eksik girişlerde FM korundu.")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
     print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
     print("==================================================")
