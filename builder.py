@@ -319,6 +319,14 @@ def fmt_hm(mins):
     m = mins % 60
     return f"{h:02d}:{m:02d}"
 
+def fmt_hours_tr(val):
+    """
+    Sayısal saat değerini Türkçe standartlarında virgüllü metne dönüştürür: 7.5 -> '7,5', 13.0 -> '13,0'
+    """
+    if isinstance(val, (int, float)):
+        return f"{val:.1f}".replace(".", ",")
+    return str(val).replace(".", ",")
+
 # =================================================================================================
 # 2. VARDİYA & FAZLA MESAİ HESAPLAMA MOTORU
 # =================================================================================================
@@ -606,7 +614,7 @@ def main():
             if len(punches) > 2 or len(dedup_times) > 2:
                 is_audit = True
                 status_type = "Çoklu Basım (Min/Max)"
-                note = f"{date_val} Çoklu Basım: Giriş {min_s}, Çıkış {max_s} ({sure:.1f}h)"
+                note = f"{date_val} Çoklu Basım: Giriş {min_s}, Çıkış {max_s} ({fmt_hours_tr(sure)} saat)"
 
             # -----------------------------------------------------------------
             # ÖZEL BÖLÜM PRİMİ HESAPLAMALARI:
@@ -621,7 +629,7 @@ def main():
                 sure += bonus_hours
                 fazla += bonus_hours
                 is_bonus = True
-                prim_aciklama = f"{dept_name} Primi: Fiili {fiili_sure:.1f}h -> Bonuslu {sure:.1f}h yazıldı (+2.0h Prim)"
+                prim_aciklama = f"{dept_name} Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s yazıldı (+{fmt_hours_tr(bonus_hours)}s Prim)"
                 note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
                 
             elif is_uretim and fiili_sure >= 12.0:
@@ -629,7 +637,7 @@ def main():
                 sure += bonus_hours
                 fazla += bonus_hours
                 is_bonus = True
-                prim_aciklama = f"Üretim Primi: Fiili {fiili_sure:.1f}h -> Bonuslu {sure:.1f}h yazıldı (+4.0h Prim)"
+                prim_aciklama = f"Üretim Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s yazıldı (+{fmt_hours_tr(bonus_hours)}s Prim)"
                 note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
 
         # 2. DURUM: Sadece 1 basım var (Eksik / Unutulan Basım)
@@ -646,7 +654,7 @@ def main():
                 sure = 7.5
                 fazla = 0.0
                 mesai = 7.5
-                note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı (7.5h yazıldı)"
+                note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
                 
             # Öğleden sonra/akşam çıkışı var (12:30 - 20:00 arası) -> Giriş basılmadı (FM Korundu)
             elif 12 * 60 + 30 < tm < 20 * 60:
@@ -655,7 +663,7 @@ def main():
                 sure, fazla = calc_factory_worked_hours("08:00", t_s)
                 mesai = min(7.5, sure)
                 status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
-                note = f"{date_val} Çıkış: {t_s} | Giriş Basılmadı ({sure:.1f}h yazıldı)"
+                note = f"{date_val} Çıkış: {t_s} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
                 
             # Gece basımı
             else:
@@ -665,7 +673,7 @@ def main():
                 sure = 7.5
                 fazla = 0.0
                 mesai = 7.5
-                note = f"{date_val} Basım: {t_s} | Tek Basım (7.5h yazıldı)"
+                note = f"{date_val} Basım: {t_s} | Tek Basım ({fmt_hours_tr(sure)} saat yazıldı)"
         else:
             sure, fazla, mesai = 0.0, 0.0, 0.0
 
@@ -720,7 +728,7 @@ def main():
             "sira": meta["sira"], "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
             "ad_soyad": full_name, "lokasyon": lokasyon, "g_tarih": date_val,
             "g_saat": g_display, "c_tarih": date_val, "c_saat": c_display,
-            "sure": f"{sure:.1f}", "mesai": f"{mesai:.1f}", "fazla": f"{fazla:.1f}",
+            "sure": round(sure, 1), "mesai": round(mesai, 1), "fazla": round(fazla, 1),
             "puantaj_tarih": date_val
         })
 
@@ -1296,6 +1304,9 @@ def main():
         ws_pdk[f"J{r_idx}"] = rec["sure"]
         ws_pdk[f"K{r_idx}"] = rec["mesai"]
         ws_pdk[f"L{r_idx}"] = rec["fazla"]
+        ws_pdk[f"J{r_idx}"].number_format = "0.0"
+        ws_pdk[f"K{r_idx}"].number_format = "0.0"
+        ws_pdk[f"L{r_idx}"].number_format = "0.0"
         ws_pdk[f"M{r_idx}"] = rec["lokasyon"]
         
         for c_idx in range(1, 14):
