@@ -353,7 +353,7 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
     if c_min < g_min:
         c_min += 24 * 60
         
-    # 1. GÜNDÜZ VARDİYASI (06:00 - 11:59)
+    # 1. GÜNDÜZ VARDİYASI (06:00 - 11:59 Giriş)
     if 6 * 60 <= g_min <= 11 * 60 + 59:
         if g_min <= 8 * 60 + 20:
             effective_start = 8 * 60
@@ -364,21 +364,47 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
             effective_start = 8 * 60 + cuts * 30
             base_hours = max(0.0, 7.5 - cuts * 0.5)
             
-        # 8-4 vardiyası bitiş aralığı
+        # 8-4 vardiyası tam bitiş aralığı
         if 15 * 60 + 50 <= c_min <= 16 * 60 + 25:
             return 7.5, 0.0
             
-        # 8-5 vardiyası normal bitişi (17:00)
+        # 8-5 vardiyası normal bitişi (17:00) veya erken çıkış
         shift_end = 17 * 60
         if c_min < shift_end:
-            raw_w = (c_min - effective_start) / 60.0
-            net = max(0.0, raw_w - 1.0)
+            elapsed_h = (c_min - effective_start) / 60.0
+            if elapsed_h <= 0:
+                return 0.0, 0.0
+            # Öğle molası öncesi çıkış (12:00 ve öncesi): Mola kesintisi YOK (Tam fiili süre, örn: 08-11 -> 3.0h)
+            if c_min <= 12 * 60:
+                net = elapsed_h
+            # Öğle molası esnası (12:01 - 13:00): 12:00'ye kadar olan net süre
+            elif c_min < 13 * 60:
+                net = max(0.0, (12 * 60 - effective_start) / 60.0)
+            # Öğleden sonra çıkış (13:00 ve sonrası, örn: 08-14 -> 4.5h, 08-15 -> 5.5h): 1.5h mola kesilir
+            else:
+                net = max(0.0, elapsed_h - 1.5)
+                
             return round(net * 2) / 2.0, 0.0
             
         ot_min = c_min - shift_end
 
-    # 2. AKŞAM VARDİYASI (12:00 - 19:59)
-    elif 12 * 60 <= g_min <= 19 * 60 + 59:
+    # 2. ÖĞLEDEN SONRA / KISMİ GÜNDÜZ ÇALIŞMASI (12:00 - 15:59 Giriş)
+    # Örn: 13:00 - 15:00 -> 2.0h, 13:00 - 17:00 -> 4.0h (Yemek molası kesintisi YOK)
+    elif 12 * 60 <= g_min < 16 * 60:
+        elapsed_h = (c_min - g_min) / 60.0
+        if c_min <= 17 * 60 + 25:
+            net = elapsed_h
+            return round(net * 2) / 2.0, 0.0
+        elif c_min < 24 * 60:
+            net = max(0.0, elapsed_h - 0.5)
+            return round(net * 2) / 2.0, 0.0
+        else:
+            shift_end = 24 * 60
+            ot_min = c_min - shift_end
+            base_hours = 7.5
+
+    # 3. AKŞAM VARDİYASI (16:00 - 19:59 Giriş)
+    elif 16 * 60 <= g_min <= 19 * 60 + 59:
         shift_end = 24 * 60
         if g_min <= 16 * 60 + 20:
             effective_start = 16 * 60
@@ -390,13 +416,16 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
             base_hours = max(0.0, 7.5 - cuts * 0.5)
             
         if c_min < shift_end:
-            raw_w = (c_min - effective_start) / 60.0
-            net = max(0.0, raw_w - 0.5)
+            elapsed_h = (c_min - effective_start) / 60.0
+            if elapsed_h <= 4.0:
+                net = elapsed_h
+            else:
+                net = max(0.0, elapsed_h - 0.5)
             return round(net * 2) / 2.0, 0.0
             
         ot_min = c_min - shift_end
 
-    # 3. GECE VARDİYASI (20:00 - 05:59)
+    # 4. GECE VARDİYASI (20:00 - 05:59 Giriş)
     else:
         shift_end = 32 * 60 if g_min >= 20 * 60 else 8 * 60
         effective_start = 24 * 60 if g_min >= 20 * 60 else 0
@@ -404,7 +433,10 @@ def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=Fal
         
         if c_min < shift_end:
             raw_w = (c_min - effective_start) / 60.0
-            net = max(0.0, raw_w - 0.5)
+            if raw_w <= 4.0:
+                net = raw_w
+            else:
+                net = max(0.0, raw_w - 0.5)
             return round(net * 2) / 2.0, 0.0
             
         ot_min = c_min - shift_end
