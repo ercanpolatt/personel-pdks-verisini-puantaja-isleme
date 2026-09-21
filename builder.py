@@ -178,15 +178,85 @@ WORD_REPLACEMENTS = {
 def clean_display_text(text):
     """
     Excel hücrelerinde görüntülenecek metinleri temizler ve bozuk Türkçe karakterleri düzeltir.
+    Kelimelerin içindeki harfleri bozmadan tam kelime/token düzeyinde onarım yapar.
     """
     if not text:
         return ""
     s = str(text).strip()
-    for k, v in WORD_REPLACEMENTS.items():
-        s = s.replace(k, v)
+    words = s.split()
+    fixed_words = []
+    for w in words:
+        if w in WORD_REPLACEMENTS:
+            fixed_words.append(WORD_REPLACEMENTS[w])
+        else:
+            w_fixed = w
+            for k, v in WORD_REPLACEMENTS.items():
+                if len(k) > 2:
+                    w_fixed = w_fixed.replace(k, v)
+                else:
+                    w_fixed = re.sub(r'\b' + re.escape(k) + r'\b', v, w_fixed)
+            fixed_words.append(w_fixed)
+    s = " ".join(fixed_words)
     s = s.replace("\ufffd", "").replace("", "")
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+def get_day_name(date_str):
+    """Tarih metninden (GG.AA.YYYY) Türkçe gün adını döndürür."""
+    if not date_str:
+        return ""
+    try:
+        parts = str(date_str).split(".")
+        if len(parts) >= 3:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+            dt = datetime(y, m, d)
+            days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+            return days[dt.weekday()]
+    except:
+        pass
+    return ""
+
+def norm_hdr(h):
+    """Sütun başlıklarını eşleştirmek için normalize eder."""
+    s = str(h).strip().lower()
+    s = s.replace("ı", "i").replace("İ", "i").replace("ş", "s").replace("Ş", "s")
+    s = s.replace("ç", "c").replace("Ç", "c").replace("ğ", "g").replace("Ğ", "g")
+    s = s.replace("ü", "u").replace("Ü", "u").replace("ö", "o").replace("Ö", "o")
+    return re.sub(r"[^a-z0-9]", "", s)
+
+def resolve_pdks_columns(sh):
+    """
+    PDKS Excel sayfasındaki başlıkları dinamik olarak analiz eder ve sütun indekslerini döndürür.
+    Böylece 8 sütunlu, 12 sütunlu, 29 sütunlu veya sütun sırası değişen tüm formatları hatasız destekler.
+    """
+    hdr_map = {}
+    if sh.nrows > 0:
+        for c in range(sh.ncols):
+            hdr_map[norm_hdr(sh.cell_value(0, c))] = c
+
+    def find_col(candidates, default=None):
+        for cand in candidates:
+            if cand in hdr_map:
+                return hdr_map[cand]
+        return default
+
+    is_legacy_29 = sh.ncols >= 20
+
+    return {
+        "sira": find_col(["sira", "sirano", "sno"], 0 if is_legacy_29 else None),
+        "sicil": find_col(["sicil", "sicilno", "tc", "tckimlik", "tckimlikno", "personelno"], 2 if is_legacy_29 else None),
+        "kart": find_col(["kart", "kartno"], 3 if is_legacy_29 else None),
+        "gun_adi": find_col(["gun", "gunadi", "gunler"], 4 if is_legacy_29 else None),
+        "adi": find_col(["ad", "adi", "personeladi", "isim"], 5 if is_legacy_29 else 0),
+        "soyadi": find_col(["soyad", "soyadi", "personelsoyadi"], 6 if is_legacy_29 else 1),
+        "ad_soyad": find_col(["adsoyad", "personel", "adisoyadi"]),
+        "lokasyon": find_col(["lokasyon", "lokasyonkodu", "kapi", "yer", "bolge"], 7 if is_legacy_29 else 2),
+        "g_tarih": find_col(["giristarihi", "gtarih", "giristarih", "bastarih", "tarih"], 8 if is_legacy_29 else 3),
+        "g_saat": find_col(["girissaati", "gsaat", "girissaat", "bassaat"], 9 if is_legacy_29 else 4),
+        "c_tarih": find_col(["cikistarihi", "ctarih", "cikistarih", "bittarih"], 10 if is_legacy_29 else 5),
+        "c_saat": find_col(["cikissaati", "csaat", "cikissaat", "bitsaat"], 11 if is_legacy_29 else 6),
+        "puantaj_tarih": find_col(["puantajtarihi", "ptarih", "puantajtarih"], 18 if sh.ncols > 18 else None),
+    }
 
 def norm_name_key(s):
     """
@@ -553,11 +623,27 @@ def main():
     # =========================================================================
     # 2. PDKS HAREKETLERİNİN TOPLANMASI VE AKILLI ANALİZİ
     # =========================================================================
-    sh_pdks = wb_pdks.sheet_by_name("HarList")
+    sh_pdks = None
+    for s_name in wb_pdks.sheet_names():
+        if "har" in s_name.lower() or "list" in s_name.lower():
+            sh_pdks = wb_pdks.sheet_by_name(s_name)
+            break
+    if not sh_pdks:
+        sh_pdks = wb_pdks.sheet_by_index(0)
+
     pdks_records = []
     emp_pdks_daily = {}
     missing_punch_records = []
     bonus_audit_records = []
+
+    tc_by_name = {norm_name_key(p["ad_soyad"]): p["tc"] for p in puantaj_rows}
+    cols = resolve_pdks_columns(sh_pdks)
+
+    def get_val(r_idx, col_key):
+        c_idx = cols.get(col_key)
+        if c_idx is not None and 0 <= c_idx < sh_pdks.ncols and c_idx < len(sh_pdks.row_values(r_idx)):
+            return clean_str(sh_pdks.cell_value(r_idx, c_idx))
+        return ""
 
     # Günlük hareketleri topla (Tarih ve süre kontrolü ile)
     raw_daily_rows = defaultdict(lambda: {"rows": [], "meta": {}})
@@ -565,7 +651,7 @@ def main():
     def add_row_to_day(p_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, row_dict):
         if not p_tarih:
             return
-        parts = p_tarih.split(".")
+        parts = str(p_tarih).split(".")
         try:
             d = int(parts[0])
             m = int(parts[1])
@@ -584,26 +670,34 @@ def main():
         raw_daily_rows[k]["rows"].append(row_dict)
 
     for r in range(1, sh_pdks.nrows):
-        sira = clean_str(sh_pdks.cell_value(r, 0))
-        sicil = clean_str(sh_pdks.cell_value(r, 2))
-        kart = clean_str(sh_pdks.cell_value(r, 3))
-        gun_adi = clean_str(sh_pdks.cell_value(r, 4))
-        adi = clean_str(sh_pdks.cell_value(r, 5))
-        soyadi = clean_str(sh_pdks.cell_value(r, 6))
-        full_name = f"{adi} {soyadi}".strip()
-        lokasyon = clean_str(sh_pdks.cell_value(r, 7))
-        g_tarih = clean_str(sh_pdks.cell_value(r, 8))
-        g_saat = clean_str(sh_pdks.cell_value(r, 9))
-        c_tarih = clean_str(sh_pdks.cell_value(r, 10))
-        c_saat = clean_str(sh_pdks.cell_value(r, 11))
-        puantaj_tarih = clean_str(sh_pdks.cell_value(r, 18)) if sh_pdks.ncols > 18 else ""
-        
-        if not full_name or full_name == "BBBBBB":
+        ad_soyad_single = get_val(r, "ad_soyad")
+        if ad_soyad_single:
+            full_name = ad_soyad_single
+        else:
+            adi = get_val(r, "adi")
+            soyadi = get_val(r, "soyadi")
+            full_name = f"{adi} {soyadi}".strip()
+
+        if not full_name or full_name in ("BBBBBB", "DDDDD"):
+            continue
+        if re.match(r"^(.)\1+$", full_name.replace(" ", "")):
             continue
 
+        name_k = norm_name_key(full_name)
+        sira = get_val(r, "sira") or str(r)
+        sicil = get_val(r, "sicil") or tc_by_name.get(name_k, "")
+        kart = get_val(r, "kart") or sicil
+        lokasyon = get_val(r, "lokasyon")
+        g_tarih = get_val(r, "g_tarih")
+        g_saat = get_val(r, "g_saat")
+        c_tarih = get_val(r, "c_tarih")
+        c_saat = get_val(r, "c_saat")
+        puantaj_tarih = get_val(r, "puantaj_tarih")
+
+        p_date = puantaj_tarih if puantaj_tarih else (g_tarih if g_tarih else c_tarih)
+        gun_adi = get_val(r, "gun_adi") or (get_day_name(p_date) if p_date else "")
+
         # Tarih ve saatleri tam kontrol et (24+ saatlik hatalı turnike eşleşmelerini ayır)
-        p_date = puantaj_tarih if puantaj_tarih else g_tarih
-        
         if g_tarih and g_saat and c_tarih and c_saat:
             dt_g = parse_d_hm(g_tarih, g_saat)
             dt_c = parse_d_hm(c_tarih, c_saat)
@@ -615,7 +709,8 @@ def main():
                     "g_tarih": g_tarih, "g_saat": g_saat, "c_tarih": "", "c_saat": ""
                 })
                 # 2. Gün (c_tarih): Sadece Çıkış/Giriş basılmış
-                add_row_to_day(c_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, {
+                c_gun_adi = get_day_name(c_tarih) if c_tarih else gun_adi
+                add_row_to_day(c_tarih, sira, sicil, kart, c_gun_adi, full_name, lokasyon, {
                     "g_tarih": c_tarih, "g_saat": c_saat, "c_tarih": "", "c_saat": ""
                 })
                 continue
@@ -625,6 +720,32 @@ def main():
         add_row_to_day(target_date, sira, sicil, kart, gun_adi, full_name, lokasyon, {
             "g_tarih": g_tarih, "g_saat": g_saat, "c_tarih": c_tarih, "c_saat": c_saat
         })
+
+    # PDKS'de kart basıp puantaj.xls'de henüz olmayan aktif personelleri listeye ekle
+    seen_names = {norm_name_key(p["ad_soyad"]) for p in puantaj_rows}
+    for (name_key, day_num), data in raw_daily_rows.items():
+        if name_key not in seen_names:
+            meta = data["meta"]
+            full_name = meta["full_name"]
+            sicil = meta["sicil"]
+            puantaj_rows.append({
+                "sno": len(puantaj_rows) + 1,
+                "tc": sicil,
+                "ad_soyad": full_name,
+                "cinsiyet": "",
+                "isletme_giris": "",
+                "sgk_giris": "",
+                "kidem": 0,
+                "sgk_cikis": "",
+                "sgk_durumu": "NORMAL",
+                "durumu": "MEVSİMLİK",
+                "bolum": emp_dept_map.get(name_key, "DİĞER"),
+                "ikamet": "",
+                "net_maas": 0.0,
+                "sirket": "FİDE KONSERVE",
+                "mesai_durumu": "ALIR"
+            })
+            seen_names.add(name_key)
 
     # -------------------------------------------------------------------------
     # Günlük hareketleri analiz et:
@@ -838,7 +959,7 @@ def main():
     sh_rap = get_sheet_by_keyword(wb_old, "rapor", 4)
     rapor_list = []
     rapor_by_tc = {}
-    if sh_rap:
+    if sh_rap and sh_rap.ncols >= 8:
         for r in range(3, sh_rap.nrows):
             takip_no = clean_str(sh_rap.cell_value(r, 1))
             sira_no = clean_str(sh_rap.cell_value(r, 2))
@@ -859,7 +980,7 @@ def main():
     sh_icra = get_sheet_by_keyword(wb_old, "cra", 3)
     icra_list = []
     icra_by_name = {}
-    if sh_icra:
+    if sh_icra and sh_icra.ncols >= 8:
         for r in range(2, sh_icra.nrows):
             isim = clean_str(sh_icra.cell_value(r, 1))
             sirket = clean_str(sh_icra.cell_value(r, 3))
@@ -895,7 +1016,7 @@ def main():
     sh_bordro = get_sheet_by_keyword(wb_old, "sayfa4", 8)
     bordro_list = []
     bordro_by_tc = {}
-    if sh_bordro:
+    if sh_bordro and sh_bordro.ncols >= 10:
         for r in range(1, sh_bordro.nrows):
             sno = clean_str(sh_bordro.cell_value(r, 0))
             tc = clean_tc(sh_bordro.cell_value(r, 1))

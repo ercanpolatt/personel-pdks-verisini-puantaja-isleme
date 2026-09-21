@@ -120,11 +120,80 @@ def clean_display_text(text):
     if not text:
         return ""
     s = str(text).strip()
+    words = s.split()
+    fixed_words = []
+    for w in words:
+        if w in WORD_REPLACEMENTS:
+            fixed_words.append(WORD_REPLACEMENTS[w])
+        else:
+            w_fixed = w
+            for k, v in WORD_REPLACEMENTS.items():
+                if len(k) > 2:
+                    w_fixed = w_fixed.replace(k, v)
+                else:
+                    w_fixed = re.sub(r'\b' + re.escape(k) + r'\b', v, w_fixed)
+            fixed_words.append(w_fixed)
+    s = " ".join(fixed_words)
     s = s.replace("\ufffd", "").replace("", "")
-    for k, v in WORD_REPLACEMENTS.items():
-        s = s.replace(k, v)
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+def get_day_name(date_str):
+    """Tarih metninden (GG.AA.YYYY) Türkçe gün adını döndürür."""
+    if not date_str:
+        return ""
+    try:
+        parts = str(date_str).split(".")
+        if len(parts) >= 3:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+            dt = datetime(y, m, d)
+            days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+            return days[dt.weekday()]
+    except:
+        pass
+    return ""
+
+def norm_hdr(h):
+    """Sütun başlıklarını eşleştirmek için normalize eder."""
+    s = str(h).strip().lower()
+    s = s.replace("ı", "i").replace("İ", "i").replace("ş", "s").replace("Ş", "s")
+    s = s.replace("ç", "c").replace("Ç", "c").replace("ğ", "g").replace("Ğ", "g")
+    s = s.replace("ü", "u").replace("Ü", "u").replace("ö", "o").replace("Ö", "o")
+    return re.sub(r"[^a-z0-9]", "", s)
+
+def resolve_pdks_columns(sh):
+    """
+    PDKS Excel sayfasındaki başlıkları dinamik olarak analiz eder ve sütun indekslerini döndürür.
+    Böylece 8 sütunlu, 12 sütunlu, 29 sütunlu veya sütun sırası değişen tüm formatları hatasız destekler.
+    """
+    hdr_map = {}
+    if sh.nrows > 0:
+        for c in range(sh.ncols):
+            hdr_map[norm_hdr(sh.cell_value(0, c))] = c
+
+    def find_col(candidates, default=None):
+        for cand in candidates:
+            if cand in hdr_map:
+                return hdr_map[cand]
+        return default
+
+    is_legacy_29 = sh.ncols >= 20
+
+    return {
+        "sira": find_col(["sira", "sirano", "sno"], 0 if is_legacy_29 else None),
+        "sicil": find_col(["sicil", "sicilno", "tc", "tckimlik", "tckimlikno", "personelno"], 2 if is_legacy_29 else None),
+        "kart": find_col(["kart", "kartno"], 3 if is_legacy_29 else None),
+        "gun_adi": find_col(["gun", "gunadi", "gunler"], 4 if is_legacy_29 else None),
+        "adi": find_col(["ad", "adi", "personeladi", "isim"], 5 if is_legacy_29 else 0),
+        "soyadi": find_col(["soyad", "soyadi", "personelsoyadi"], 6 if is_legacy_29 else 1),
+        "ad_soyad": find_col(["adsoyad", "personel", "adisoyadi"]),
+        "lokasyon": find_col(["lokasyon", "lokasyonkodu", "kapi", "yer", "bolge"], 7 if is_legacy_29 else 2),
+        "g_tarih": find_col(["giristarihi", "gtarih", "giristarih", "bastarih", "tarih"], 8 if is_legacy_29 else 3),
+        "g_saat": find_col(["girissaati", "gsaat", "girissaat", "bassaat"], 9 if is_legacy_29 else 4),
+        "c_tarih": find_col(["cikistarihi", "ctarih", "cikistarih", "bittarih"], 10 if is_legacy_29 else 5),
+        "c_saat": find_col(["cikissaati", "csaat", "cikissaat", "bitsaat"], 11 if is_legacy_29 else 6),
+        "puantaj_tarih": find_col(["puantajtarihi", "ptarih", "puantajtarih"], 18 if sh.ncols > 18 else None),
+    }
 
 def norm_name_key(s):
     if not s:
@@ -453,33 +522,54 @@ class PDKSEngine:
     def load_and_process_pdks(self):
         """PDKS hareketlerini okur, mükerrer basımları filtreler ve günlük hareketleri toplar."""
         wb_pdks = xlrd.open_workbook(self.pdks_path, encoding_override="cp1254")
-        sh_pdks = wb_pdks.sheet_by_name("HarList")
+        sh_pdks = None
+        for s_name in wb_pdks.sheet_names():
+            if "har" in s_name.lower() or "list" in s_name.lower():
+                sh_pdks = wb_pdks.sheet_by_name(s_name)
+                break
+        if not sh_pdks:
+            sh_pdks = wb_pdks.sheet_by_index(0)
+
+        cols = resolve_pdks_columns(sh_pdks)
+
+        def get_val(r_idx, col_key):
+            c_idx = cols.get(col_key)
+            if c_idx is not None and 0 <= c_idx < sh_pdks.ncols and c_idx < len(sh_pdks.row_values(r_idx)):
+                return clean_str(sh_pdks.cell_value(r_idx, c_idx))
+            return ""
 
         for r in range(1, sh_pdks.nrows):
-            sira = clean_str(sh_pdks.cell_value(r, 0))
-            sicil = clean_str(sh_pdks.cell_value(r, 2))
-            kart = clean_str(sh_pdks.cell_value(r, 3))
-            gun_adi = clean_str(sh_pdks.cell_value(r, 4))
-            adi = clean_str(sh_pdks.cell_value(r, 5))
-            soyadi = clean_str(sh_pdks.cell_value(r, 6))
-            full_name = f"{adi} {soyadi}".strip()
-            lokasyon = clean_str(sh_pdks.cell_value(r, 7))
-            g_tarih = clean_str(sh_pdks.cell_value(r, 8))
-            g_saat = clean_str(sh_pdks.cell_value(r, 9))
-            c_tarih = clean_str(sh_pdks.cell_value(r, 10))
-            c_saat = clean_str(sh_pdks.cell_value(r, 11))
-            p_tarih = clean_str(sh_pdks.cell_value(r, 18)) if sh_pdks.ncols > 18 else ""
-            
-            if not full_name or full_name == "BBBBBB":
+            ad_soyad_single = get_val(r, "ad_soyad")
+            if ad_soyad_single:
+                full_name = ad_soyad_single
+            else:
+                adi = get_val(r, "adi")
+                soyadi = get_val(r, "soyadi")
+                full_name = f"{adi} {soyadi}".strip()
+                
+            if not full_name or full_name in ("BBBBBB", "DDDDD"):
+                continue
+            if re.match(r"^(.)\1+$", full_name.replace(" ", "")):
                 continue
                 
             name_k = norm_name_key(full_name)
-            
+            sira = get_val(r, "sira") or str(r)
+            sicil = get_val(r, "sicil")
+            kart = get_val(r, "kart")
+            lokasyon = get_val(r, "lokasyon")
+            g_tarih = get_val(r, "g_tarih")
+            g_saat = get_val(r, "g_saat")
+            c_tarih = get_val(r, "c_tarih")
+            c_saat = get_val(r, "c_saat")
+            p_tarih = get_val(r, "puantaj_tarih")
+            target_date = p_tarih if p_tarih else (g_tarih if g_tarih else c_tarih)
+            gun_adi = get_val(r, "gun_adi") or (get_day_name(target_date) if target_date else "")
+
             # Personel listesinde yoksa ekle
             if name_k not in self.personnel_by_key:
                 p_data = {
                     "sno": len(self.personnel_list) + 1,
-                    "tc": sicil,
+                    "tc": sicil if sicil else "",
                     "ad_soyad": full_name,
                     "name_key": name_k,
                     "bolum": "DİĞER",
@@ -495,11 +585,11 @@ class PDKSEngine:
                 dt_c = parse_d_hm(c_tarih, c_saat)
                 if dt_g and dt_c and (dt_c - dt_g).total_seconds() > 18 * 3600:
                     self._add_punch_to_day(g_tarih, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, "")
-                    self._add_punch_to_day(c_tarih, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, "", c_saat)
+                    c_gun_adi = get_day_name(c_tarih) if c_tarih else gun_adi
+                    self._add_punch_to_day(c_tarih, sira, sicil, kart, c_gun_adi, full_name, name_k, lokasyon, "", c_saat)
                     continue
 
             # Normal geçerli hareket
-            target_date = p_tarih if p_tarih else (g_tarih if g_tarih else c_tarih)
             self._add_punch_to_day(target_date, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, c_saat)
 
         # Günlük hareketleri hesapla
