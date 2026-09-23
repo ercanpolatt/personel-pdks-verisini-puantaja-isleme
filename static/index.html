@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="FİDE KONSERVE - Endüstriyel PDKS, Puantaj, Vardiya ve Bordro Yönetim Portalı">
+  <title>FİDE KONSERVE — Puantaj & PDKS Yönetim Portalı</title>
+  
+  <!-- Modern Typography (Plus Jakarta Sans & JetBrains Mono) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- ========================================================================= -->
+  <!-- TOP EXECUTIVE NAVBAR                                                     -->
+  <!-- ========================================================================= -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand-logo">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        <div class="brand-text">
+          <span class="brand-title">FİDE KONSERVE</span>
+          <span class="brand-subtitle">PDKS & Puantaj Yönetim Portalı</span>
+        </div>
+      </div>
+      <div class="header-badge period-badge" id="headerPeriodBadge">
+        <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <span id="periodText">Eylül 2026 Dönemi</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="system-status">
+        <span class="status-dot pulse-green"></span>
+        <span class="status-label" id="statusLabel">PDKS Motoru Aktif (500 Personel)</span>
+      </div>
+      <button class="btn btn-primary" id="btnHeaderGenerate">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span>Raporları Yeniden Üret</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- TAB SEGMENTED NAVIGATION                                                  -->
+  <!-- ========================================================================= -->
+  <nav class="nav-tabs-container">
+    <div class="nav-tabs" role="tablist">
+      <button class="nav-tab active" role="tab" data-tab="tab-overview" id="navTabOverview">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/>
+          <rect x="14" y="3" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/>
+        </svg>
+        <span>Genel Bakış</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-matrix" id="navTabMatrix">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <line x1="9" y1="21" x2="9" y2="9"/>
+        </svg>
+        <span>Puantaj Matrisi</span>
+        <span class="tab-pill" id="badgeTotalActive">250</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-exceptions" id="navTabExceptions">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span>İstisna & Amir Onay Masası</span>
+        <span class="tab-pill pill-warning" id="badgePendingExceptions">154</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-bonuses" id="navTabBonuses">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        <span>Bölüm Primleri</span>
+        <span class="tab-pill pill-purple" id="badgeBonusesCount">173</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-financial" id="navTabFinancial">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="1" x2="12" y2="23"/>
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+        <span>Maliyet & Bütçe Radarı</span>
+        <span class="tab-pill pill-green" id="badgeFinancialOtCost">₺1.04M</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-reports" id="navTabReports">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+          <polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <span>Rapor Merkezi & Ayarlar</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ========================================================================= -->
+  <!-- MAIN CONTENT CONTAINER                                                    -->
+  <!-- ========================================================================= -->
+  <main class="main-container">
+
+    <!-- ======================================================================= -->
+    <!-- TAB 1: GENEL BAKIŞ (OVERVIEW)                                           -->
+    <!-- ======================================================================= -->
+    <section class="tab-content active" id="tab-overview">
+      
+      <!-- 6 Executive KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card" id="kpiTotalPersonnel">
+          <div class="kpi-icon-wrapper kpi-blue">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam Personel</span>
+            <span class="kpi-value" id="valTotalPersonnel">500</span>
+            <span class="kpi-sub" id="subTotalPersonnel">Bordro & Kart Havuzu</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiActivePersonnel">
+          <div class="kpi-icon-wrapper kpi-green">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <polyline points="16 11 18 13 22 9"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Kart Basan Aktif Personel</span>
+            <span class="kpi-value" id="valActivePersonnel">250</span>
+            <span class="kpi-sub" id="subActivePersonnel">%50,0 Katılım Oranı</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiTotalHours">
+          <div class="kpi-icon-wrapper kpi-cyan">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam Çalışma Süresi</span>
+            <span class="kpi-value" id="valTotalHours">27.847,0 <small>saat</small></span>
+            <span class="kpi-sub" id="subBaseHours">23.929,5s Normal Mesai</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiOvertimeHours">
+          <div class="kpi-icon-wrapper kpi-amber">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam Fazla Mesai</span>
+            <span class="kpi-value" id="valOvertimeHours">3.917,5 <small>saat</small></span>
+            <span class="kpi-sub">17:26 Sonrası Kademeli</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiBonusHours">
+          <div class="kpi-icon-wrapper kpi-purple">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Bölüm Primleri</span>
+            <span class="kpi-value" id="valBonusHours">374,0 <small>saat</small></span>
+            <span class="kpi-sub" id="subBonusCount">173 Hak Ediş Kaydı</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiExceptions">
+          <div class="kpi-icon-wrapper kpi-rose">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Tek Basım / İstisna</span>
+            <span class="kpi-value" id="valExceptions">154</span>
+            <span class="kpi-sub" id="subResolvedExceptions">Amir Onayı Gerektiren</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts & Visual Analytics Section -->
+      <div class="dashboard-analytics-grid">
+        <!-- 30-Day Trend Chart Card -->
+        <div class="analytics-card chart-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">30 Günlük Vardiya ve Çalışma Trendi (Eylül 2026)</h3>
+              <p class="card-desc">Günlük çalışan personel sayısı, toplam çalışma saatleri ve fazla mesai dağılımı</p>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-color color-cyan"></span> Toplam Saat</span>
+              <span class="legend-item"><span class="legend-color color-amber"></span> Fazla Mesai</span>
+              <span class="legend-item"><span class="legend-color color-gold"></span> Pazar Tatili</span>
+            </div>
+          </div>
+          <div class="chart-container" id="dailyTrendChartContainer">
+            <!-- Dynamic SVG Chart Injected Here -->
+            <div class="chart-placeholder">Grafik yükleniyor...</div>
+          </div>
+        </div>
+
+        <!-- Department Breakdown Card -->
+        <div class="analytics-card dept-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Bölümlere Göre Çalışma Dağılımı</h3>
+              <p class="card-desc">Personel sayısı, fiili saatler ve fazla mesai hacmi</p>
+            </div>
+          </div>
+          <div class="dept-list-container" id="deptBreakdownContainer">
+            <!-- Dynamic Department Rows Injected Here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Cards Section -->
+      <div class="quick-actions-bar">
+        <div class="action-tile" id="tilePuantajExcel">
+          <div class="tile-icon icon-excel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="8" y1="13" x2="16" y2="13"/>
+              <line x1="8" y1="17" x2="16" y2="17"/>
+            </svg>
+          </div>
+          <div class="tile-text">
+            <strong>10 Sayfalı Canlı Puantaj (puantaj.xlsx)</strong>
+            <span>SGK Bordro, İzinler, İcra ve Formüllü Fark Maaş Kitabı</span>
+          </div>
+          <a href="/api/download/puantaj_xlsx" class="btn btn-outline" download>İndir</a>
+        </div>
+
+        <div class="action-tile" id="tileDailyExcel">
+          <div class="tile-icon icon-chart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="9" y1="21" x2="9" y2="9"/>
+            </svg>
+          </div>
+          <div class="tile-text">
+            <strong>Günlük Çalışma & Denetim İzi Kitabı</strong>
+            <span>3.318 Hareket, Renkli Matris ve İstisna Denetimi</span>
+          </div>
+          <a href="/api/download/gunluk_xlsx" class="btn btn-outline" download>İndir</a>
+        </div>
+
+        <div class="action-tile" id="tileExceptionsJump">
+          <div class="tile-icon icon-alert">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div class="tile-text">
+            <strong>İstisna & Amir Onay Masası</strong>
+            <span>154 tek basım kaydı amir onayı bekliyor</span>
+          </div>
+          <button class="btn btn-warning" onclick="switchTab('tab-exceptions')">İncele & Onayla</button>
+        </div>
+
+        <div class="action-tile" id="tileFinancialJump">
+          <div class="tile-icon icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+          </div>
+          <div class="tile-text">
+            <strong>Maliyet & Bütçe Radarı</strong>
+            <span>₺1.04M Fazla Mesai ve ₺4.65M Bordro Analizi</span>
+          </div>
+          <button class="btn btn-success" onclick="switchTab('tab-financial')">Maliyetleri İncele</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB 2: PUANTAJ MATRİSİ (ATTENDANCE MATRIX)                               -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-matrix">
+      
+      <!-- Filter Toolbar -->
+      <div class="toolbar-card">
+        <div class="search-input-group">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="matrixSearchInput" class="form-input" placeholder="Ad Soyad, TC No, Sicil veya Bölüm ara...">
+        </div>
+
+        <div class="filter-controls">
+          <div class="select-group">
+            <label for="matrixDeptFilter">Bölüm:</label>
+            <select id="matrixDeptFilter" class="form-select">
+              <option value="all">Tüm Bölümler</option>
+            </select>
+          </div>
+
+          <div class="select-group">
+            <label for="matrixStatusFilter">Durumu:</label>
+            <select id="matrixStatusFilter" class="form-select">
+              <option value="active">Sadece Çalışanlar (250)</option>
+              <option value="all">Tüm Personel (500)</option>
+              <option value="inactive">Kart Basmayanlar</option>
+            </select>
+          </div>
+
+          <div class="select-group">
+            <label for="matrixPageSize">Sayfa Başı:</label>
+            <select id="matrixPageSize" class="form-select">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="500">Tümü (500)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Matrix Legend -->
+      <div class="matrix-legend-bar">
+        <span class="legend-badge badge-normal">Standart Mesai (7.5s)</span>
+        <span class="legend-badge badge-ot">Fazla Mesai (+OT)</span>
+        <span class="legend-badge badge-bonus">Bölüm Primi (Lila)</span>
+        <span class="legend-badge badge-exception">Tek Basım / İstisna</span>
+        <span class="legend-badge badge-sunday">Pazar Tatili</span>
+        <span class="legend-tip">İpucu: Herhangi bir satıra tıklayarak personelin tüm ay boyunca giriş-çıkış kart hareketlerini inceleyebilirsiniz.</span>
+      </div>
+
+      <!-- Table Wrapper with Horizontal Scroll -->
+      <div class="table-responsive-wrapper">
+        <table class="data-table matrix-table" id="matrixTable">
+          <thead id="matrixTableHeader">
+            <!-- Headers injected dynamically for dynamic days 1..30 -->
+          </thead>
+          <tbody id="matrixTableBody">
+            <!-- Rows injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Toolbar -->
+      <div class="pagination-bar">
+        <div class="pagination-info" id="matrixPaginationInfo">
+          Gösterilen: 1 - 50 / 250 Personel
+        </div>
+        <div class="pagination-buttons">
+          <button class="btn btn-sm btn-outline" id="btnMatrixPrev">Önceki</button>
+          <span class="page-display" id="matrixPageDisplay">Sayfa 1 / 5</span>
+          <button class="btn btn-sm btn-outline" id="btnMatrixNext">Sonraki</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB 3: İSTİSNA & AMİR ONAY MASASI                                        -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-exceptions">
+      
+      <div class="toolbar-card">
+        <div class="search-input-group">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="exceptionsSearchInput" class="form-input" placeholder="Personel adı, bölüm veya hata türü ara...">
+        </div>
+
+        <div class="filter-controls">
+          <div class="segmented-control">
+            <button class="seg-btn active" data-status="all" id="segBtnAllExceptions">Tümü (154)</button>
+            <button class="seg-btn" data-status="pending" id="segBtnPendingExceptions">Onay Bekleyenler</button>
+            <button class="seg-btn" data-status="resolved" id="segBtnResolvedExceptions">Çözülenler</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exceptions List Table -->
+      <div class="table-responsive-wrapper">
+        <table class="data-table exceptions-table" id="exceptionsTable">
+          <thead>
+            <tr>
+              <th style="width: 50px;">Sıra</th>
+              <th style="width: 100px;">Tarih</th>
+              <th style="width: 220px;">Adı Soyadı</th>
+              <th style="width: 160px;">Bölüm</th>
+              <th style="width: 120px;">Ham Basım</th>
+              <th style="width: 110px;">Fiili / Standart</th>
+              <th style="width: 180px;">İstisna Nedeni</th>
+              <th style="width: 140px;">Onay Durumu</th>
+              <th style="width: 120px; text-align: center;">İşlem</th>
+            </tr>
+          </thead>
+          <tbody id="exceptionsTableBody">
+            <!-- Exception rows injected here -->
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB 4: BÖLÜM PRİMLERİ TAKİP MASASI                                      -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-bonuses">
+      
+      <!-- Bonus Highlights Cards -->
+      <div class="kpi-grid kpi-grid-3">
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-purple">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam Bölüm Primi</span>
+            <span class="kpi-value" id="valBonusTotalHours">374,0 <small>saat</small></span>
+            <span class="kpi-sub">Fabrika Genelinde İlave Mesai</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-cyan">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+              <line x1="9" y1="9" x2="9.01" y2="9"/>
+              <line x1="15" y1="9" x2="15.01" y2="9"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Balık Dolum ve Kesim Primi</span>
+            <span class="kpi-value" id="valFishBonus">346,0 <small>saat</small></span>
+            <span class="kpi-sub">Çalışılan her güne +2.0s (173 hak ediş)</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-amber">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Üretim Primi (12s Üzeri)</span>
+            <span class="kpi-value" id="valProdBonus">28,0 <small>saat</small></span>
+            <span class="kpi-sub">12s ve üzeri çalışmalara +4.0s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bonus Filter Toolbar -->
+      <div class="toolbar-card">
+        <div class="search-input-group">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="bonusesSearchInput" class="form-input" placeholder="Personel adı veya kural ara...">
+        </div>
+
+        <div class="filter-controls">
+          <div class="select-group">
+            <label for="bonusesDeptFilter">Bölüm:</label>
+            <select id="bonusesDeptFilter" class="form-select">
+              <option value="all">Tüm Prim Alan Bölümler</option>
+              <option value="BALIK DOLUM">Balık Dolum</option>
+              <option value="BALIK KESİM">Balık Kesim</option>
+              <option value="ÜRETİM">Üretim</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bonuses Table -->
+      <div class="table-responsive-wrapper">
+        <table class="data-table bonuses-table" id="bonusesTable">
+          <thead>
+            <tr>
+              <th style="width: 50px;">Sıra</th>
+              <th style="width: 100px;">Tarih</th>
+              <th style="width: 220px;">Adı Soyadı</th>
+              <th style="width: 180px;">Bölüm</th>
+              <th style="width: 130px;">Kart Hareketleri</th>
+              <th style="width: 100px;">Fiili Süre</th>
+              <th style="width: 100px;">Eklenen Prim</th>
+              <th style="width: 100px;">Sonuç Saat</th>
+              <th>Kural ve Denetim İzahı</th>
+            </tr>
+          </thead>
+          <tbody id="bonusesTableBody">
+            <!-- Bonus rows injected here -->
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB: CANLI MAAŞ, MESAİ VE İŞÇİLİK MALİYET RADARI (FİNANS & BÜTÇE)       -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-financial">
+      
+      <!-- 4 Financial KPI Cards -->
+      <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-amber">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam Fazla Mesai Maliyeti</span>
+            <span class="kpi-value" id="valFinancialOtCost">₺0,00</span>
+            <span class="kpi-sub" id="subFinancialOtHours">0,0 Saat (%50 Zamlı)</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-green">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <line x1="12" y1="11" x2="12" y2="17"/>
+              <line x1="9" y1="14" x2="15" y2="14"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam İşçilik Bütçesi</span>
+            <span class="kpi-value" id="valFinancialPayrollCost">₺0,00</span>
+            <span class="kpi-sub" id="subFinancialBaseCost">Maaş + Fazla Mesai Hakediş</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-purple">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Bölüm Primleri Maliyeti</span>
+            <span class="kpi-value" id="valFinancialBonusCost">₺0,00</span>
+            <span class="kpi-sub" id="subFinancialBonusHours">374,0s Prim Karşılığı</span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon-wrapper kpi-cyan">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Ortalama Saatlik Mesai Maliyeti</span>
+            <span class="kpi-value" id="valFinancialAvgRate">₺0,00</span>
+            <span class="kpi-sub">4857 SK %50 Zamlı Ortalama</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Executive Insights Alert Banner -->
+      <div class="financial-insights-banner">
+        <div class="insight-header">
+          <svg class="insight-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <strong>YÖNETİM & FİNANS ANALİZ ÖZETİ (EYLÜL 2026):</strong>
+        </div>
+        <div class="insight-grid">
+          <div class="insight-pill alert-critical">
+            <strong>🚨 Balık Dolum Yoğunluk Alarmı:</strong>
+            <span>Sadece 9 çalışan kişi başı <strong>58,0 saat</strong> mesai yaptı (Kişi başı <strong>₺12.760,00</strong> FM maliyeti!). Fabrikanın en yoğun mesai yükü bu hatta.</span>
+          </div>
+          <div class="insight-pill alert-info">
+            <strong>🏭 Üretim & Ambar Bütçe Payı:</strong>
+            <span>Fabrika fazla mesai bütçesinin <strong>%15,5</strong>'i Üretim (₺161.403,38), <strong>%12,9</strong>'u Ambar (₺134.178,84) departmanı tarafından tüketildi.</span>
+          </div>
+          <div class="insight-pill alert-success">
+            <strong>🐟 Balık Temizleme Dağılımı:</strong>
+            <span>77 aktif çalışan ile en kalabalık birim olmasına rağmen kişi başı ortalama mesai sadece 7,7 saat (₺1.694,29/kişi).</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Analytics Section -->
+      <div class="dashboard-analytics-grid" style="margin-top: 20px;">
+        <!-- Left: Department Overtime Cost Progress Bars -->
+        <div class="analytics-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Departman Bazlı Fazla Mesai Maliyet Dağılımı (TL & Pay)</h3>
+              <p class="card-desc">Bölümlerin toplam fazla mesai bütçesi içerisindeki payları ve harcamaları</p>
+            </div>
+          </div>
+          <div class="dept-cost-bars-list" id="deptCostBarsContainer">
+            <!-- Dynamic Department Cost Bars Injected Here -->
+          </div>
+        </div>
+
+        <!-- Right: Department Insights & Intensity Cards -->
+        <div class="analytics-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Bölüm Bazlı Kişi Başı Mesai Yükü & Analiz Notları</h3>
+              <p class="card-desc">Kişi başı mesai ortalamaları ve verimlilik değerlendirmeleri</p>
+            </div>
+          </div>
+          <div class="dept-insights-list" id="deptInsightsContainer">
+            <!-- Dynamic Insights Injected Here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Personnel Payroll Table -->
+      <div class="toolbar-card" style="margin-top: 20px;">
+        <div class="search-input-group">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="financialSearchInput" class="form-input" placeholder="Personel adı, TC No veya bölüm ara...">
+        </div>
+
+        <div class="filter-controls">
+          <div class="select-group">
+            <label for="financialDeptFilter">Bölüm:</label>
+            <select id="financialDeptFilter" class="form-select">
+              <option value="all">Tüm Bölümler</option>
+            </select>
+          </div>
+          <a href="/api/download/financial_xlsx" class="btn btn-primary btn-sm" download>
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Maliyet Raporunu Excel İndir (.xlsx)</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="table-responsive-wrapper">
+        <table class="data-table" id="financialPersonnelTable">
+          <thead>
+            <tr>
+              <th style="width: 45px;">Sıra</th>
+              <th style="width: 105px;">TC Kimlik No</th>
+              <th style="width: 170px;">Adı Soyadı</th>
+              <th style="width: 140px;">Bölüm</th>
+              <th style="width: 70px; text-align: center;">Ç. Gün</th>
+              <th style="width: 100px; text-align: right;">Net Maaş</th>
+              <th style="width: 90px; text-align: right;">Saatlik Normal</th>
+              <th style="width: 90px; text-align: right;">Saatlik Mesai (%50)</th>
+              <th style="width: 70px; text-align: right;">H.İçi FM</th>
+              <th style="width: 70px; text-align: right;">Pazar FM</th>
+              <th style="width: 75px; text-align: right;">Toplam FM</th>
+              <th style="width: 105px; text-align: right;">Toplam FM (TL)</th>
+              <th style="width: 70px; text-align: right;">Prim (s)</th>
+              <th style="width: 85px; text-align: right;">Prim (TL)</th>
+              <th style="width: 110px; text-align: right;">Toplam Net Hakediş</th>
+              <th style="width: 100px; text-align: right;">SGK Banka Neti</th>
+              <th style="width: 105px; text-align: right;">Elden Ödenecek Fark</th>
+            </tr>
+          </thead>
+          <tbody id="financialPersonnelTableBody">
+            <!-- Injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Toolbar -->
+      <div class="pagination-bar">
+        <div class="pagination-info" id="financialPaginationInfo">
+          Gösterilen: 1 - 50 / 250 Personel
+        </div>
+        <div class="pagination-buttons">
+          <button class="btn btn-sm btn-outline" id="btnFinancialPrev">Önceki</button>
+          <span class="page-display" id="financialPageDisplay">Sayfa 1 / 5</span>
+          <button class="btn btn-sm btn-outline" id="btnFinancialNext">Sonraki</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB 5: RAPOR MERKEZİ & AYARLAR                                          -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-reports">
+      
+      <div class="reports-layout-grid">
+        
+        <!-- Left Column: Report Downloads & File Upload -->
+        <div class="reports-left-col">
+          
+          <div class="settings-card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Resmi Rapor İndirme Merkezi</h3>
+                <p class="card-desc">Sistemin ürettiği güncel Excel çalışma kitapları ve ERP aktarım dosyaları</p>
+              </div>
+            </div>
+
+            <div class="download-cards-list">
+              <div class="download-item">
+                <div class="download-icon icon-excel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong>10 Sayfalı Canlı Formüllü Puantaj (puantaj.xlsx)</strong>
+                  <span>SGK Bordro Sayfa3, Yıllık İzinler, İcra, Raporlar ve VLOOKUP formülleri</span>
+                </div>
+                <a href="/api/download/puantaj_xlsx" class="btn btn-sm btn-primary" download>İndir (.xlsx)</a>
+              </div>
+
+              <div class="download-item">
+                <div class="download-icon icon-green">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="1" x2="12" y2="23"/>
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong>Maaş, Mesai ve Bütçe Radarı (Fide_Konserve_Maas_ve_Maliyet_Radari.xlsx)</strong>
+                  <span>Departman Maliyet Özeti & 250 Personel Detaylı Net/FM/Elden Fark Analiz Kitabı</span>
+                </div>
+                <a href="/api/download/financial_xlsx" class="btn btn-sm btn-primary" download>İndir (.xlsx)</a>
+              </div>
+
+              <div class="download-item">
+                <div class="download-icon icon-chart">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <line x1="3" y1="9" x2="21" y2="9"/>
+                    <line x1="9" y1="21" x2="9" y2="9"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong>Günlük Çalışma ve Denetim İzi Raporu (gunluk_calisma_raporu.xlsx)</strong>
+                  <span>Renkli 30 günlük çalışma matrisi, 3.318 hareket ve istisna denetim izi</span>
+                </div>
+                <a href="/api/download/gunluk_xlsx" class="btn btn-sm btn-primary" download>İndir (.xlsx)</a>
+              </div>
+
+              <div class="download-item">
+                <div class="download-icon icon-blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"/>
+                    <line x1="8" y1="12" x2="21" y2="12"/>
+                    <line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/>
+                    <line x1="3" y1="12" x2="3.01" y2="12"/>
+                    <line x1="3" y1="18" x2="3.01" y2="18"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong>Alfabetik Personel Çalışma Cetveli (pdks_eylul_gunluk_calisma_saatleri.xlsx)</strong>
+                  <span>A'dan Z'ye sıralı sade personel puantaj ve mesai tablosu</span>
+                </div>
+                <a href="/api/download/simple_xlsx" class="btn btn-sm btn-primary" download>İndir (.xlsx)</a>
+              </div>
+
+              <div class="download-item">
+                <div class="download-icon icon-green">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong>ERP & Muhasebe Aktarım Dosyası (gunluk_calismalar.csv)</strong>
+                  <span>Virgülle ayrılmış standart veri tabanı entegrasyonu dosyası (UTF-8 BOM)</span>
+                </div>
+                <a href="/api/download/csv" class="btn btn-sm btn-outline" download>İndir (.csv)</a>
+              </div>
+
+              <div class="download-item">
+                <div class="download-icon icon-purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong>Tam JSON Veri Paketi (gunluk_calismalar.json)</strong>
+                  <span>Tüm personel, hareketler ve ayarların programlanabilir JSON çıktısı</span>
+                </div>
+                <a href="/api/download/json" class="btn btn-sm btn-outline" download>İndir (.json)</a>
+              </div>
+            </div>
+
+            <div class="generate-all-box">
+              <button class="btn btn-primary btn-block btn-lg" id="btnGenerateAllReports">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                <span>Tüm Raporları Sıfırdan Hesapla & Üret</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Drag & Drop Upload Card -->
+          <div class="settings-card upload-card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Dosya Yükleme & Güncelleme</h3>
+                <p class="card-desc">Yeni ay veya güncellenmiş PDKS / Puantaj verilerini sisteme yükleyin</p>
+              </div>
+            </div>
+
+            <div class="upload-dropzone-grid">
+              <div class="dropzone" id="dropzonePdks">
+                <input type="file" id="fileInputPdks" accept=".xls,.xlsx" style="display:none;">
+                <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <strong>pdks.xls Yükle</strong>
+                <span>Turnike basım loglarını güncellemek için tıklayın veya sürükleyin</span>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('fileInputPdks').click()">Dosya Seç</button>
+              </div>
+
+              <div class="dropzone" id="dropzonePuantaj">
+                <input type="file" id="fileInputPuantaj" accept=".xls,.xlsx" style="display:none;">
+                <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <strong>puantaj.xls Yükle</strong>
+                <span>Personel ve bordro listesini güncellemek için tıklayın veya sürükleyin</span>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('fileInputPuantaj').click()">Dosya Seç</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Rules & Configuration Editor -->
+        <div class="reports-right-col">
+          <div class="settings-card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Vardiya, Mola ve Prim Kuralları (rules.json)</h3>
+                <p class="card-desc">Fabrika mesai parametrelerini düzenleyin ve anında motoru güncelleyin</p>
+              </div>
+              <button class="btn btn-sm btn-outline" id="btnResetRules">Varsayılana Sıfırla</button>
+            </div>
+
+            <form id="rulesForm" class="rules-form">
+              <h4 class="form-section-title">Gündüz Vardiyası Parametreleri</h4>
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label>Vardiya Başlangıç Saati</label>
+                  <input type="text" id="ruleDayStart" class="form-input" value="08:00">
+                </div>
+                <div class="form-group">
+                  <label>Sabah Tolerans Sınırı</label>
+                  <input type="text" id="ruleDayTolerance" class="form-input" value="08:20">
+                  <small class="form-hint">08:20'ye kadar tam gün (08:21+ her 30dk için 0.5s kesinti)</small>
+                </div>
+                <div class="form-group">
+                  <label>Vardiya Bitiş Saati</label>
+                  <input type="text" id="ruleDayEnd" class="form-input" value="17:00">
+                </div>
+                <div class="form-group">
+                  <label>Standart Fiili Süre (Saat)</label>
+                  <input type="number" step="0.5" id="ruleDayHours" class="form-input" value="7.5">
+                </div>
+                <div class="form-group">
+                  <label>Öğle Yemek Molası (Saat)</label>
+                  <input type="number" step="0.5" id="ruleLunchBreak" class="form-input" value="1.5">
+                </div>
+                <div class="form-group">
+                  <label>Fazla Mesai Başlama Toleransı (Dakika)</label>
+                  <input type="number" id="ruleOtGrace" class="form-input" value="25">
+                  <small class="form-hint">17:00 + 25dk = 17:26 sonrası fazla mesai başlar</small>
+                </div>
+              </div>
+
+              <h4 class="form-section-title">Özel Bölüm Primleri</h4>
+              <div class="form-grid-1">
+                <div class="rule-box">
+                  <strong>🐟 Balık Dolum ve Kesim Primi</strong>
+                  <p>Çalışılan günde saat fark etmeksizin eklenen prim:</p>
+                  <div class="form-grid-2" style="margin-top: 8px;">
+                    <div class="form-group">
+                      <label>Eklenen Bonus Saati</label>
+                      <input type="number" step="0.5" id="ruleFishBonus" class="form-input" value="2.0">
+                    </div>
+                    <div class="form-group">
+                      <label>Minimum Çalışma Eşiği (Saat)</label>
+                      <input type="number" step="0.5" id="ruleFishThreshold" class="form-input" value="0.0">
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rule-box">
+                  <strong>🏭 Üretim Primi</strong>
+                  <p>Ağır üretim mesaileri için belirlenen eşik ve eklenen bonus:</p>
+                  <div class="form-grid-2" style="margin-top: 8px;">
+                    <div class="form-group">
+                      <label>Minimum Çalışma Eşiği (Saat)</label>
+                      <input type="number" step="0.5" id="ruleProdThreshold" class="form-input" value="12.0">
+                    </div>
+                    <div class="form-group">
+                      <label>Eklenen Bonus Saati</label>
+                      <input type="number" step="0.5" id="ruleProdBonus" class="form-input" value="4.0">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-actions" style="margin-top: 20px;">
+                <button type="submit" class="btn btn-primary btn-block" id="btnSaveRules">
+                  Kuralları Kaydet ve Sistemi Yeniden Hesapla
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: İSTİSNA ONAYLAMA & DÜZENLEME (AMİR ONAY DİYALOĞU)                   -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalResolveException">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalExceptionTitle">İstisna / Tek Basım Amir Onayı</h3>
+        <button class="btn-close" onclick="closeModal('modalResolveException')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="exception-summary-box" id="modalExceptionSummary">
+          <!-- Summary info injected here -->
+        </div>
+
+        <form id="formResolveException">
+          <input type="hidden" id="modalNameKey">
+          <input type="hidden" id="modalDay">
+
+          <div class="form-group">
+            <label for="modalApprovedHours">Onaylanan Günlük Çalışma Saati (Saat)</label>
+            <input type="number" step="0.5" id="modalApprovedHours" class="form-input" required value="7.5">
+            <small class="form-hint">Standart tam gün: 7.5 saat (1.5s mola düşülmüş net süre)</small>
+          </div>
+
+          <div class="form-group">
+            <label for="modalResolver">Onaylayan Amir / Yetkili</label>
+            <input type="text" id="modalResolver" class="form-input" value="Vardiya Amiri">
+          </div>
+
+          <div class="form-group">
+            <label for="modalNote">Onay Notu & Gerekçe</label>
+            <textarea id="modalNote" class="form-textarea" rows="3" placeholder="Örn: Saha amiri teyidi alındı, vardiyada fiilen çalıştı."></textarea>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeModal('modalResolveException')">İptal</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitResolution">Onayla ve Puantaja İşle</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: PERSONEL AYLIK KART HAREKETLERİ ÇEKMECESİ                         -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalPersonnelPunches">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <div class="modal-header-profile">
+          <h3 class="modal-title" id="modalPersonName">Personel Kart Hareketleri</h3>
+          <span class="person-meta" id="modalPersonMeta">TC: - | Sicil: - | Bölüm: -</span>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalPersonnelPunches')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive-wrapper modal-table-wrapper">
+          <table class="data-table" id="modalPunchesTable">
+            <thead>
+              <tr>
+                <th style="width: 50px;">Gün</th>
+                <th style="width: 100px;">Tarih</th>
+                <th style="width: 120px;">Ham Basımlar</th>
+                <th style="width: 80px;">Giriş</th>
+                <th style="width: 80px;">Çıkış</th>
+                <th style="width: 80px;">Mola (s)</th>
+                <th style="width: 80px;">Fiili (s)</th>
+                <th style="width: 80px;">Normal (s)</th>
+                <th style="width: 80px;">FM (s)</th>
+                <th style="width: 80px;">Prim (s)</th>
+                <th style="width: 80px;">Toplam (s)</th>
+                <th>Denetim İzahı</th>
+              </tr>
+            </thead>
+            <tbody id="modalPunchesTableBody">
+              <!-- Days injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('modalPersonnelPunches')">Kapat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- TOAST NOTIFICATIONS CONTAINER                                             -->
+  <!-- ========================================================================= -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scripts -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

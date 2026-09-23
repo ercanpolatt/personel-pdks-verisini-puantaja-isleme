@@ -62,7 +62,9 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
     align_header = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     # Eylül 2026 Pazar günleri
-    sundays = {6, 13, 20, 27}
+    sundays = engine.sundays
+    tr_months = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    month_name = tr_months[engine.target_month].upper() if 1 <= engine.target_month <= 12 else ""
 
     # =========================================================================
     # SAYFA 1: GÜNLÜK PUANTAJ VE ÇALIŞMA MATRİSİ
@@ -71,16 +73,17 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
     ws_mat.views.sheetView[0].showGridLines = True
 
     # 1. Başlık Satırı
-    ws_mat.merge_cells("A1:AK1")
+    last_title_col = get_column_letter(6 + engine.days_in_month + 5)
+    ws_mat.merge_cells(f"A1:{last_title_col}1")
     cell_title = ws_mat["A1"]
-    cell_title.value = "FİDE KONSERVE - GÜNLÜK PERSONEL ÇALIŞMA SAATLERİ VE PUANTAJ MATRİSİ (EYLÜL 2026)"
+    cell_title.value = f"FİDE KONSERVE - GÜNLÜK PERSONEL ÇALIŞMA SAATLERİ VE PUANTAJ MATRİSİ ({month_name} {engine.target_year})"
     cell_title.font = font_main_title
     cell_title.fill = fill_navy_dark
     cell_title.alignment = align_center
     ws_mat.row_dimensions[1].height = 28
 
     # 2. Açıklama & Lejant Satırı
-    ws_mat.merge_cells("A2:AK2")
+    ws_mat.merge_cells(f"A2:{last_title_col}2")
     cell_sub = ws_mat["A2"]
     cell_sub.value = (
         "Lejant: Standart Gün: 7,5 Saat (1,5s Mola Düşülmüştür) | "
@@ -115,10 +118,10 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
         ws_mat.column_dimensions[get_column_letter(col_idx)].width = w
         col_idx += 1
 
-    # Gün başlıklarını yaz (1..30)
+    # Gün başlıklarını yaz (1..days_in_month)
     day_start_col = col_idx
-    for d in range(1, 31):
-        c = ws_mat.cell(row=3, column=col_idx, value=f"{d:02d}.09")
+    for d in range(1, engine.days_in_month + 1):
+        c = ws_mat.cell(row=3, column=col_idx, value=f"{d:02d}.{engine.target_month:02d}")
         c.font = font_header
         c.fill = PatternFill(start_color="333F48", end_color="333F48", fill_type="solid") if d not in sundays else PatternFill(start_color="806000", end_color="806000", fill_type="solid")
         c.alignment = align_header
@@ -174,9 +177,9 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
             if row_bg.fill_type:
                 cell.fill = row_bg
 
-        # Günlük Saatler (1..30)
+        # Günlük Saatler (1..days_in_month)
         c_cur = day_start_col
-        for d in range(1, 31):
+        for d in range(1, engine.days_in_month + 1):
             cell = ws_mat.cell(row=row_idx, column=c_cur)
             cell.border = border_cell
             cell.alignment = align_center
@@ -491,7 +494,7 @@ def export_csv_and_json(engine, csv_path="gunluk_calismalar.csv", json_path="gun
     ]
     
     with open(csv_path, mode="w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for rec in sorted_audit:
             writer.writerow(rec)

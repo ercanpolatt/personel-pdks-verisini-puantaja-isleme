@@ -4,7 +4,8 @@
 PDKS Günlük Çalışma Saatleri Sade Raporlayıcı (export_simple_pdks.py)
 ===================================================================================================
 PDKS'de kart basan tüm çalışanları A'dan Z'ye alfabetik sırayla listeler.
-1..30 Eylül günlerinde çalışılan saatleri yazar, çalışılmayan günleri tamamen BOMBOŞ (değersiz) bırakır.
+1..N günlerinde çalışılan saatleri yazar, çalışılmayan günleri tamamen BOMBOŞ (değersiz) bırakır.
+Dinamik takvim desteğiyle tüm ay ve gün sayılarına tam uyumludur.
 """
 
 import csv
@@ -13,9 +14,14 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from pdks_engine import PDKSEngine
 
-def generate_simple_report(output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx", output_csv="pdks_eylul_gunluk_calisma_saatleri.csv"):
+def generate_simple_report(
+    output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx",
+    output_csv="pdks_eylul_gunluk_calisma_saatleri.csv",
+    month=9,
+    year=2026
+):
     print("1. PDKS ve Puantaj verileri hesaplanıyor...")
-    engine = PDKSEngine(pdks_path="pdks.xls", puantaj_path="puantaj.xls", target_month=9, target_year=2026)
+    engine = PDKSEngine(pdks_path="pdks.xls", puantaj_path="puantaj.xls", target_month=month, target_year=year)
     engine.load_personnel()
     engine.load_and_process_pdks()
     matrix = engine.get_summary_matrix()
@@ -35,7 +41,7 @@ def generate_simple_report(output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx"
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Eylul_2026_Saatler"
+    ws.title = f"{month:02d}_{year}_Saatler"
     ws.views.sheetView[0].showGridLines = True
 
     # Tema ve Fontlar
@@ -62,24 +68,24 @@ def generate_simple_report(output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx"
     align_left   = Alignment(horizontal="left", vertical="center")
     align_right  = Alignment(horizontal="right", vertical="center")
 
+    tr_months = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    month_name = tr_months[engine.target_month].upper() if 1 <= engine.target_month <= 12 else ""
+
+    # Sütun Başlıkları
+    headers = [("Sıra", 6), ("Adı Soyadı", 25), ("Bölüm", 16)]
+    for d in range(1, engine.days_in_month + 1):
+        day_name = engine.get_day_name_for_day(d, short=True)
+        headers.append((f"{d:02d}.{engine.target_month:02d}\n{day_name}", 6))
+    headers.append(("Çalışılan\nGün", 9))
+    headers.append(("Toplam\nSaat", 10))
+
     # Başlık Satırı
-    ws.merge_cells("A1:AI1")
-    ws["A1"] = "FİDE KONSERVE - EYLÜL 2026 PDKS GÜNLÜK ÇALIŞMA SAATLERİ (ALFABETİK LİSTE)"
+    ws.merge_cells(f"A1:{get_column_letter(len(headers))}1")
+    ws["A1"] = f"FİDE KONSERVE - {month_name} {engine.target_year} PDKS GÜNLÜK ÇALIŞMA SAATLERİ (ALFABETİK LİSTE)"
     ws["A1"].font = font_title
     ws["A1"].fill = fill_navy
     ws["A1"].alignment = align_center
     ws.row_dimensions[1].height = 28
-
-    # Sütun Başlıkları
-    day_names_tr = ["Salı", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar"]
-
-    headers = [("Sıra", 6), ("Adı Soyadı", 25), ("Bölüm", 16)]
-    for d in range(1, 31):
-        day_name = day_names_tr[d-1]
-        headers.append((f"{d:02d}.09\n{day_name}", 6))
-    headers.append(("Çalışılan\nGün", 9))
-    headers.append(("Toplam\nSaat", 10))
-
     ws.row_dimensions[2].height = 28
 
     for c_idx, (h_text, w) in enumerate(headers, start=1):
@@ -87,13 +93,13 @@ def generate_simple_report(output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx"
         cell = ws[f"{col_let}2"]
         cell.value = h_text
         cell.font = font_hdr
-        is_sunday = False
-        if 4 <= c_idx <= 33:
+        is_sun = False
+        if 4 <= c_idx <= 3 + engine.days_in_month:
             d = c_idx - 3
-            if day_names_tr[d-1] == "PAZAR":
-                is_sunday = True
-        cell.fill = fill_sunday if is_sunday else fill_blue_hdr
-        if is_sunday:
+            if engine.is_sunday(d):
+                is_sun = True
+        cell.fill = fill_sunday if is_sun else fill_blue_hdr
+        if is_sun:
             cell.font = Font(name="Segoe UI", size=9, bold=True, color="7F6000")
         cell.alignment = align_center
         cell.border = border_thin
@@ -120,13 +126,13 @@ def generate_simple_report(output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx"
             if row_fill:
                 ws[f"{cl}{r_idx}"].fill = row_fill
 
-        for d in range(1, 31):
+        for d in range(1, engine.days_in_month + 1):
             col_let = get_column_letter(d + 3)
             cell = ws[f"{col_let}{r_idx}"]
             cell.border = border_thin
             cell.alignment = align_center
             h = m["daily_hours"].get(d, 0.0)
-            is_sunday = (day_names_tr[d-1] == "PAZAR")
+            is_sun = engine.is_sunday(d)
 
             if h > 0:
                 cell.value = h
@@ -136,14 +142,14 @@ def generate_simple_report(output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx"
             else:
                 # KULLANICI İSTEĞİ: Boş yerlere çizgi koyma, bomboş kalsın değersiz
                 cell.value = None
-                if is_sunday:
+                if is_sun:
                     cell.fill = fill_sunday
                 elif row_fill:
                     cell.fill = row_fill
 
         # Çalışılan Gün ve Toplam Saat
-        col_gun = get_column_letter(34)
-        col_saat = get_column_letter(35)
+        col_gun = get_column_letter(3 + engine.days_in_month + 1)
+        col_saat = get_column_letter(3 + engine.days_in_month + 2)
 
         ws[f"{col_gun}{r_idx}"] = m["total_work_days"]
         ws[f"{col_gun}{r_idx}"].alignment = align_center

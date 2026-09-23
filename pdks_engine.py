@@ -5,16 +5,49 @@ PDKS ve Puantaj Çekirdek Hesaplama Motoru (pdks_engine.py)
 ===================================================================================================
 Bu modül, ham PDKS (turnike) ve personel verilerini alıp İş Kanunu ve fabrika kurallarına göre
 gün gün çalışma saati, fazla mesai, mola kesintileri ve bölüm primlerini en yüksek doğrulukla hesaplar.
+Dinamik takvim (calendar) desteğiyle tüm ay ve yıllarla tam uyumludur.
 """
 
-import xlrd
+import calendar
 import re
 import unicodedata
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Dict, List, Optional, Set, Tuple, Union
+import xlrd
+from config.settings import load_rules, calculate_department_bonus
 
 # =================================================================================================
-# 1. TÜRKÇE KARAKTER VE KELİME ONARIM SÖZLÜĞÜ
+# 1. VERİ MODELLERİ (DATACLASSES)
+# =================================================================================================
+@dataclass
+class ShiftResult:
+    """Vardiya ve fazla mesai hesaplama sonuç modeli."""
+    total_hours: float
+    base_hours: float
+    overtime_hours: float
+    break_hours: float
+    effective_g: str
+    effective_c: str
+    gross_hours: float
+
+    def __iter__(self):
+        """Geriye dönük uyumluluk için tuple unpacking desteği: total, base, ot, brk, eg, ec, gross = res"""
+        yield self.total_hours
+        yield self.base_hours
+        yield self.overtime_hours
+        yield self.break_hours
+        yield self.effective_g
+        yield self.effective_c
+        yield self.gross_hours
+
+    def __getitem__(self, index):
+        return tuple(self)[index]
+
+
+# =================================================================================================
+# 2. TÜRKÇE KARAKTER VE KELİME ONARIM SÖZLÜĞÜ
 # =================================================================================================
 WORD_REPLACEMENTS = {
     "RENLOLU": "İRENLİOĞLU",
@@ -116,15 +149,21 @@ WORD_REPLACEMENTS = {
     "SILA ZER": "SILA ÖZER",
 }
 
-def clean_display_text(text):
+# =================================================================================================
+# 3. YARDIMCI VE TEMİZLEME FONKSİYONLARI
+# =================================================================================================
+def clean_display_text(text: Optional[str]) -> str:
     if not text:
         return ""
     s = str(text).strip()
     words = s.split()
     fixed_words = []
     for w in words:
+        w_clean = w.replace("\ufffd", "").replace("", "")
         if w in WORD_REPLACEMENTS:
             fixed_words.append(WORD_REPLACEMENTS[w])
+        elif w_clean in WORD_REPLACEMENTS:
+            fixed_words.append(WORD_REPLACEMENTS[w_clean])
         else:
             w_fixed = w
             for k, v in WORD_REPLACEMENTS.items():
@@ -138,7 +177,7 @@ def clean_display_text(text):
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 
-def get_day_name(date_str):
+def get_day_name(date_str: str) -> str:
     """Tarih metninden (GG.AA.YYYY) Türkçe gün adını döndürür."""
     if not date_str:
         return ""
@@ -149,11 +188,11 @@ def get_day_name(date_str):
             dt = datetime(y, m, d)
             days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
             return days[dt.weekday()]
-    except:
+    except Exception:
         pass
     return ""
 
-def norm_hdr(h):
+def norm_hdr(h: str) -> str:
     """Sütun başlıklarını eşleştirmek için normalize eder."""
     s = str(h).strip().lower()
     s = s.replace("ı", "i").replace("İ", "i").replace("ş", "s").replace("Ş", "s")
@@ -161,11 +200,8 @@ def norm_hdr(h):
     s = s.replace("ü", "u").replace("Ü", "u").replace("ö", "o").replace("Ö", "o")
     return re.sub(r"[^a-z0-9]", "", s)
 
-def resolve_pdks_columns(sh):
-    """
-    PDKS Excel sayfasındaki başlıkları dinamik olarak analiz eder ve sütun indekslerini döndürür.
-    Böylece 8 sütunlu, 12 sütunlu, 29 sütunlu veya sütun sırası değişen tüm formatları hatasız destekler.
-    """
+def resolve_pdks_columns(sh) -> Dict[str, Optional[int]]:
+    """PDKS Excel sayfasındaki başlıkları dinamik analiz eder ve sütun indekslerini döndürür."""
     hdr_map = {}
     if sh.nrows > 0:
         for c in range(sh.ncols):
@@ -195,12 +231,13 @@ def resolve_pdks_columns(sh):
         "puantaj_tarih": find_col(["puantajtarihi", "ptarih", "puantajtarih"], 18 if sh.ncols > 18 else None),
     }
 
-def norm_name_key(s):
+def norm_name_key(s: Optional[str]) -> str:
     if not s:
         return ""
     s = str(s).strip()
     s = re.sub(r"\(.*?\)", "", s)
     s = re.sub(r"-.*$", "", s)
+    s = s.replace("ı", "i").replace("İ", "I")
     s = s.replace("\ufffd", "I").replace("", "")
     s = unicodedata.normalize("NFKD", s)
     s = re.sub(r"[^a-zA-Z0-9]", "", s).upper()
@@ -219,7 +256,7 @@ def norm_name_key(s):
     }
     return aliases.get(s, s)
 
-def clean_tc(tc_val):
+def clean_tc(tc_val) -> str:
     if tc_val is None:
         return ""
     if isinstance(tc_val, float):
@@ -236,23 +273,58 @@ def clean_tc(tc_val):
         s = "0" + s
     return s
 
-def clean_str(val):
+def clean_str(val) -> str:
     if val is None:
         return ""
     if isinstance(val, float) and val.is_integer():
         return str(int(val)).strip()
     return clean_display_text(str(val).strip())
 
-def parse_hm(t_str):
+def clean_money(val) -> float:
+    if val is None or val == "":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).replace("TL", "").replace("tl", "").replace(".", "").replace(",", ".").strip()
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+def xldate_to_str(val) -> str:
+    if val is None or val == "":
+        return ""
+    if isinstance(val, float):
+        try:
+            t = xlrd.xldate_as_datetime(val, 0)
+            return t.strftime("%d.%m.%Y")
+        except Exception:
+            pass
+    s = str(val).strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}", s):
+        parts = s.split()[0].split("-")
+        return f"{parts[2]}.{parts[1]}.{parts[0]}"
+    return s
+
+def get_sheet_by_keyword(wb, keyword: str, default_idx: Optional[int] = None):
+    kw = keyword.lower()
+    for s in wb.sheets():
+        if kw in s.name.lower():
+            return s
+    if default_idx is not None and default_idx < wb.nsheets:
+        return wb.sheet_by_index(default_idx)
+    return None
+
+def parse_hm(t_str: Optional[str]) -> Optional[Tuple[int, int]]:
     if not t_str or ":" not in str(t_str):
         return None
     p = str(t_str).strip().split(":")
     try:
         return int(p[0]), int(p[1])
-    except:
+    except Exception:
         return None
 
-def parse_d_hm(d_str, t_str):
+def parse_d_hm(d_str: str, t_str: str) -> Optional[datetime]:
     if not d_str or not t_str or ":" not in str(t_str):
         return None
     try:
@@ -261,45 +333,40 @@ def parse_d_hm(d_str, t_str):
         p_t = str(t_str).strip().split(":")
         h, mn = int(p_t[0]), int(p_t[1])
         return datetime(y, m, d, h, mn)
-    except:
+    except Exception:
         return None
 
-def fmt_hm(mins):
+def fmt_hm(mins: int) -> str:
     h = (mins // 60) % 24
     m = mins % 60
     return f"{h:02d}:{m:02d}"
 
-def fmt_hours_tr(val):
+def fmt_hours_tr(val: Union[int, float, str]) -> str:
     if isinstance(val, (int, float)):
         return f"{val:.1f}".replace(".", ",")
     return str(val).replace(".", ",")
 
 # =================================================================================================
-# 2. VARDİYA & FAZLA MESAİ HESAPLAMA MOTORU (1.5 SAAT MOLA POLİTİKASI)
+# 4. VARDİYA & FAZLA MESAİ HESAPLAMA MOTORU (1.5 SAAT MOLA POLİTİKASI)
 # =================================================================================================
-def calculate_shift_hours(g_saat_str, c_saat_str):
+def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
     """
-    Giriş ve çıkış saatlerine göre:
-    - 08:20 toleransı
-    - 1.5 saat standart yemek ve dinlenme molası
-    - Kademeli fazla mesai (17:26 sonrası)
-    - 3 vardiya desteğini hesaplar.
-    
-    Döndürdüğü Değerler (tuple):
-    (total_hours, base_hours, ot_hours, break_hours, effective_g, effective_c, gross_hours)
+    Giriş ve çıkış saatlerine göre vardiya süresini hesaplar.
+    Döndürdüğü Nesne: ShiftResult (total_hours, base_hours, overtime_hours, break_hours, effective_g, effective_c, gross_hours)
+    Aynı zamanda tuple unpacking ile doğrudan (tot, base, ot, ...) şeklinde de açılabilir.
     """
     g = parse_hm(g_saat_str)
     c = parse_hm(c_saat_str)
     
     if not g or not c:
-        return 7.5, 7.5, 0.0, 0.0, "08:00", "17:00", 7.5
+        return ShiftResult(7.5, 7.5, 0.0, 0.0, "08:00", "17:00", 7.5)
         
     g_min = g[0] * 60 + g[1]
     c_min = c[0] * 60 + c[1]
     
     # Çift basım / Anlık giriş-çıkış
     if abs(c_min - g_min) <= 3:
-        return 7.5, 7.5, 0.0, 0.0, g_saat_str[:5], c_saat_str[:5], 0.05
+        return ShiftResult(7.5, 7.5, 0.0, 0.0, g_saat_str[:5], c_saat_str[:5], 0.05)
         
     if c_min < g_min:
         c_min += 24 * 60
@@ -325,14 +392,14 @@ def calculate_shift_hours(g_saat_str, c_saat_str):
         
         # 8-4 vardiyası tam bitiş aralığı (15:50 - 16:25)
         if 15 * 60 + 50 <= c_min <= 16 * 60 + 25:
-            return 7.5, 7.5, 0.0, 0.5, effective_g, effective_c, gross_hours
+            return ShiftResult(7.5, 7.5, 0.0, 0.5, effective_g, effective_c, gross_hours)
             
         # 8-5 vardiyası bitişi (17:00) veya erken çıkış
         shift_end = 17 * 60
         if c_min < shift_end:
             elapsed_h = (c_min - effective_start) / 60.0
             if elapsed_h <= 0:
-                return 0.0, 0.0, 0.0, 0.0, effective_g, effective_c, gross_hours
+                return ShiftResult(0.0, 0.0, 0.0, 0.0, effective_g, effective_c, gross_hours)
             # Öğle molası öncesi çıkış (<= 12:00): Mola kesintisi YOK (Tam fiili süre)
             if c_min <= 12 * 60:
                 net = elapsed_h
@@ -347,7 +414,7 @@ def calculate_shift_hours(g_saat_str, c_saat_str):
                 break_hours = 1.5
                 
             final_h = round(net * 2) / 2.0
-            return final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
         ot_min = c_min - shift_end
         break_hours = 1.5
@@ -364,12 +431,12 @@ def calculate_shift_hours(g_saat_str, c_saat_str):
             net = elapsed_h
             break_hours = 0.0
             final_h = round(net * 2) / 2.0
-            return final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
         elif c_min < 24 * 60:
             net = max(0.0, elapsed_h - 0.5)
             break_hours = 0.5
             final_h = round(net * 2) / 2.0
-            return final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
         else:
             shift_end = 24 * 60
             ot_min = c_min - shift_end
@@ -401,7 +468,7 @@ def calculate_shift_hours(g_saat_str, c_saat_str):
                 net = max(0.0, elapsed_h - 0.5)
                 break_hours = 0.5
             final_h = round(net * 2) / 2.0
-            return final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
         ot_min = c_min - shift_end
         break_hours = 0.5
@@ -424,7 +491,7 @@ def calculate_shift_hours(g_saat_str, c_saat_str):
                 net = max(0.0, raw_w - 0.5)
                 break_hours = 0.5
             final_h = round(net * 2) / 2.0
-            return final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
         ot_min = c_min - shift_end
         break_hours = 0.5
@@ -450,30 +517,69 @@ def calculate_shift_hours(g_saat_str, c_saat_str):
             
     ot_hours = step * 0.5
     total_hours = base_hours + ot_hours
-    return total_hours, base_hours, ot_hours, break_hours, effective_g, effective_c, gross_hours
+    return ShiftResult(total_hours, base_hours, ot_hours, break_hours, effective_g, effective_c, gross_hours)
+
+def calc_factory_worked_hours(g_saat_str: str, c_saat_str: str, sure_str: str = "", is_office: bool = False) -> Tuple[float, float]:
+    """Geriye dönük uyumluluk: (total_hours, overtime_hours) tuple'ı döndürür."""
+    res = calculate_shift_hours(g_saat_str, c_saat_str)
+    return res.total_hours, res.overtime_hours
 
 # =================================================================================================
-# 3. ANA MOTOR SINIFI (PDKSEngine)
+# 5. ANA MOTOR SINIFI (PDKSEngine)
 # =================================================================================================
 class PDKSEngine:
-    def __init__(self, pdks_path="pdks.xls", puantaj_path="puantaj.xls", target_month=9, target_year=2026):
+    def __init__(self, pdks_path: str = "pdks.xls", puantaj_path: str = "puantaj.xls", target_month: int = 9, target_year: int = 2026, rules: Optional[Dict] = None):
         self.pdks_path = pdks_path
         self.puantaj_path = puantaj_path
         self.target_month = target_month
         self.target_year = target_year
+        self.rules = rules or load_rules()
         
-        self.personnel_list = []
-        self.personnel_by_key = {}
-        self.personnel_by_tc = {}
-        self.dept_by_key = {}
+        # Dinamik Takvim Tanımları
+        _, self.days_in_month = calendar.monthrange(self.target_year, self.target_month)
+        self.sundays: Set[int] = {
+            d for d in range(1, self.days_in_month + 1)
+            if calendar.weekday(self.target_year, self.target_month, d) == 6
+        }
+        
+        self.personnel_list: List[Dict] = []
+        self.personnel_by_key: Dict[str, Dict] = {}
+        self.personnel_by_tc: Dict[str, Dict] = {}
+        self.dept_by_key: Dict[str, str] = {}
         
         self.raw_daily_punches = defaultdict(lambda: {"rows": [], "meta": {}})
-        self.daily_results = {}
-        self.audit_records = []
-        self.exception_records = []
+        self.daily_results: Dict[Tuple[str, int], Dict] = {}
+        self.audit_records: List[Dict] = []
+        self.exception_records: List[Dict] = []
+        self.bonus_records: List[Dict] = []
+        
+        # Ek bordro tabloları
+        self.rapor_list: List[Dict] = []
+        self.rapor_by_tc: Dict[str, int] = {}
+        self.icra_list: List[Dict] = []
+        self.icra_by_name: Dict[str, Dict] = {}
+        self.izin_list: List[Dict] = []
+        self.izin_by_tc: Dict[str, Dict] = {}
+        self.bordro_list: List[Dict] = []
+        self.bordro_by_tc: Dict[str, Dict] = {}
+        self.daimi_list: List[Dict] = []
 
-    def load_personnel(self):
-        """Puantaj dosyasından personel ana bilgilerini ve bölümlerini yükler."""
+    def get_day_name_for_day(self, day_num: int, short: bool = False) -> str:
+        """Belirtilen ay ve gün için Türkçe gün adını döndürür."""
+        try:
+            wd = calendar.weekday(self.target_year, self.target_month, int(day_num))
+            days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+            short_days = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR"]
+            return short_days[wd] if short else days[wd]
+        except Exception:
+            return ""
+
+    def is_sunday(self, day_num: int) -> bool:
+        """Günün Pazar tatili olup olmadığını denetler."""
+        return int(day_num) in self.sundays
+
+    def load_personnel(self) -> int:
+        """Puantaj dosyasından personel ana bilgilerini ve bölümlerini eksiksiz yükler."""
         wb = xlrd.open_workbook(self.puantaj_path, encoding_override="cp1254")
         sheet = None
         for s in wb.sheets():
@@ -487,13 +593,22 @@ class PDKSEngine:
         for r in range(2, sheet.nrows):
             tc = clean_tc(sheet.cell_value(r, 1))
             ad_soyad = clean_str(sheet.cell_value(r, 2))
-            bolum = clean_str(sheet.cell_value(r, 10))
-            durumu = clean_str(sheet.cell_value(r, 9)) or "MEVSİMLİK"
-            net_maas = sheet.cell_value(r, 12) or 0.0
-            
             if not ad_soyad:
                 continue
-                
+
+            cinsiyet = clean_str(sheet.cell_value(r, 3)) if sheet.ncols > 3 else ""
+            isletme_giris = xldate_to_str(sheet.cell_value(r, 4)) if sheet.ncols > 4 else ""
+            sgk_giris = xldate_to_str(sheet.cell_value(r, 5)) if sheet.ncols > 5 else ""
+            kidem = sheet.cell_value(r, 6) if sheet.ncols > 6 else 0
+            sgk_cikis = xldate_to_str(sheet.cell_value(r, 7)) if sheet.ncols > 7 else ""
+            sgk_durumu = clean_str(sheet.cell_value(r, 8)) or "NORMAL" if sheet.ncols > 8 else "NORMAL"
+            durumu = clean_str(sheet.cell_value(r, 9)) or "MEVSİMLİK" if sheet.ncols > 9 else "MEVSİMLİK"
+            bolum = clean_str(sheet.cell_value(r, 10)) if sheet.ncols > 10 else ""
+            ikamet = clean_str(sheet.cell_value(r, 11)) if sheet.ncols > 11 else ""
+            net_maas = clean_money(sheet.cell_value(r, 12)) if sheet.ncols > 12 else 0.0
+            sirket = clean_str(sheet.cell_value(r, 13)) or "FİDE KONSERVE" if sheet.ncols > 13 else "FİDE KONSERVE"
+            mesai_durumu = clean_str(sheet.cell_value(r, 14)) or "ALIR" if sheet.ncols > 14 else "ALIR"
+            
             name_k = norm_name_key(ad_soyad)
             if bolum:
                 self.dept_by_key[name_k] = bolum
@@ -508,16 +623,166 @@ class PDKSEngine:
                 "tc": tc,
                 "ad_soyad": ad_soyad,
                 "name_key": name_k,
-                "bolum": bolum,
+                "cinsiyet": cinsiyet,
+                "isletme_giris": isletme_giris,
+                "sgk_giris": sgk_giris,
+                "kidem": kidem,
+                "sgk_cikis": sgk_cikis,
+                "sgk_durumu": sgk_durumu,
                 "durumu": durumu,
-                "net_maas": net_maas
+                "bolum": bolum,
+                "ikamet": ikamet,
+                "net_maas": net_maas,
+                "sirket": sirket,
+                "mesai_durumu": mesai_durumu
             }
             self.personnel_list.append(p_data)
             self.personnel_by_key[name_k] = p_data
             if tc:
                 self.personnel_by_tc[tc] = p_data
-
+        self.load_payroll_sheets()
         return len(self.personnel_list)
+
+    def load_payroll_sheets(self):
+        """Puantaj dosyasındaki diğer bordro sayfalarını (Rapor, İcra, İzin, Bordro, Daimi) okur."""
+        wb = xlrd.open_workbook(self.puantaj_path, encoding_override="cp1254")
+        
+        # 1. SGK Raporları
+        sh_rap = get_sheet_by_keyword(wb, "rapor", 4)
+        self.rapor_list = []
+        self.rapor_by_tc = {}
+        if sh_rap and sh_rap.ncols >= 8:
+            for r in range(3, sh_rap.nrows):
+                ad_soyad = clean_str(sh_rap.cell_value(r, 4))
+                if not ad_soyad:
+                    continue
+                tc = clean_tc(sh_rap.cell_value(r, 3))
+                rec = {
+                    "takip_no": clean_str(sh_rap.cell_value(r, 1)),
+                    "sira_no": clean_str(sh_rap.cell_value(r, 2)),
+                    "tc": tc,
+                    "ad_soyad": ad_soyad,
+                    "vaka": clean_str(sh_rap.cell_value(r, 5)),
+                    "pol_tarih": xldate_to_str(sh_rap.cell_value(r, 6)),
+                    "isbasi_tarih": xldate_to_str(sh_rap.cell_value(r, 7))
+                }
+                self.rapor_list.append(rec)
+                if tc:
+                    self.rapor_by_tc[tc] = self.rapor_by_tc.get(tc, 0) + 1
+
+        # 2. İcra Takip
+        sh_icra = get_sheet_by_keyword(wb, "cra", 3)
+        self.icra_list = []
+        self.icra_by_name = {}
+        if sh_icra and sh_icra.ncols >= 8:
+            for r in range(2, sh_icra.nrows):
+                isim = clean_str(sh_icra.cell_value(r, 1))
+                if not isim:
+                    continue
+                kalan_borc = clean_money(sh_icra.cell_value(r, 5))
+                kesilen = clean_money(sh_icra.cell_value(r, 6))
+                dosya = clean_str(sh_icra.cell_value(r, 4))
+                iban = clean_str(sh_icra.cell_value(r, 7))
+                rec = {
+                    "isim": isim,
+                    "sirket": clean_str(sh_icra.cell_value(r, 3)),
+                    "dosya": dosya,
+                    "kalan_borc": kalan_borc,
+                    "kesilen": kesilen,
+                    "iban": iban
+                }
+                self.icra_list.append(rec)
+                self.icra_by_name[norm_name_key(isim)] = {
+                    "kesilen": kesilen, "kalan_borc": kalan_borc, "dosya": dosya, "iban": iban
+                }
+
+        # 3. Ücretli İzinler
+        sh_izin = None
+        for s in wb.sheets():
+            s_clean = s.name.lower().replace("\ufffd", "").replace("ı", "i")
+            if "izin" in s_clean or "zin" in s_clean:
+                sh_izin = s
+                break
+        if not sh_izin and wb.nsheets > 4:
+            sh_izin = wb.sheet_by_index(4)
+
+        self.izin_list = []
+        self.izin_by_tc = {}
+        if sh_izin:
+            for r in range(1, sh_izin.nrows):
+                isim = clean_str(sh_izin.cell_value(r, 1))
+                if not isim:
+                    continue
+                tc = clean_tc(sh_izin.cell_value(r, 0))
+                gun = clean_money(sh_izin.cell_value(r, 2)) if sh_izin.ncols > 2 else 0.0
+                saat = gun * 7.5
+                rec = {"tc": tc, "isim": isim, "saat": saat, "gun": gun}
+                self.izin_list.append(rec)
+                if tc:
+                    self.izin_by_tc[tc] = {"saat": saat, "gun": gun}
+
+        # 4. Resmi Bordro SGK (Sayfa3)
+        sh_bordro = None
+        for s in wb.sheets():
+            s_clean = s.name.lower().replace("\ufffd", "").replace("ı", "i")
+            if "bordro" in s_clean or s.name.lower() == "sayfa3":
+                sh_bordro = s
+                break
+        if not sh_bordro and wb.nsheets > 17:
+            sh_bordro = wb.sheet_by_index(17)
+
+        self.bordro_list = []
+        self.bordro_by_tc = {}
+        if sh_bordro and sh_bordro.ncols >= 20:
+            kanun_col = 71 if sh_bordro.ncols > 71 else (30 if sh_bordro.ncols > 30 else -1)
+            meslek_col = 73 if sh_bordro.ncols > 73 else (33 if sh_bordro.ncols > 33 else -1)
+            for c in range(sh_bordro.ncols):
+                h_c = str(sh_bordro.cell_value(0, c)).lower()
+                if "kanun no" in h_c:
+                    kanun_col = c
+                elif "meslek kodu" in h_c:
+                    meslek_col = c
+
+            for r in range(1, sh_bordro.nrows):
+                ad_soyad = clean_str(sh_bordro.cell_value(r, 2))
+                if not ad_soyad:
+                    continue
+                tc = clean_tc(sh_bordro.cell_value(r, 1))
+                row_dict = {
+                    "sno": clean_str(sh_bordro.cell_value(r, 0)),
+                    "tc": tc,
+                    "ad_soyad": ad_soyad,
+                    "ucret": clean_money(sh_bordro.cell_value(r, 3)),
+                    "giris": xldate_to_str(sh_bordro.cell_value(r, 4)),
+                    "cikis": xldate_to_str(sh_bordro.cell_value(r, 5)),
+                    "normal_kazanc": clean_money(sh_bordro.cell_value(r, 14)),
+                    "ek_kazanc": clean_money(sh_bordro.cell_value(r, 15)),
+                    "yasal_kesinti": clean_money(sh_bordro.cell_value(r, 17)),
+                    "toplam_kazanc": clean_money(sh_bordro.cell_value(r, 20)),
+                    "toplam_kesinti": clean_money(sh_bordro.cell_value(r, 21)),
+                    "odenecek_net": clean_money(sh_bordro.cell_value(r, 22)),
+                    "sgk_gun": clean_money(sh_bordro.cell_value(r, 23)),
+                    "sgk_brut": clean_money(sh_bordro.cell_value(r, 24)),
+                    "kanun": clean_str(sh_bordro.cell_value(r, kanun_col)) if kanun_col >= 0 else "",
+                    "meslek_kodu": clean_str(sh_bordro.cell_value(r, meslek_col)) if meslek_col >= 0 else ""
+                }
+                self.bordro_list.append(row_dict)
+                if tc:
+                    self.bordro_by_tc[tc] = row_dict
+
+        # 5. Daimi Personel Listesi
+        self.daimi_list = []
+        for p in self.personnel_list:
+            if p.get("durumu") == "DAİMİ":
+                self.daimi_list.append({
+                    "sno": len(self.daimi_list) + 1,
+                    "tc": p["tc"],
+                    "ad_soyad": p["ad_soyad"],
+                    "sgk_giris": p.get("sgk_giris", ""),
+                    "sgk_durum": p.get("sgk_durumu", "NORMAL"),
+                    "durum": "DAİMİ",
+                    "maas": p.get("net_maas", 0.0)
+                })
 
     def load_and_process_pdks(self):
         """PDKS hareketlerini okur, mükerrer basımları filtreler ve günlük hareketleri toplar."""
@@ -572,12 +837,23 @@ class PDKSEngine:
                     "tc": sicil if sicil else "",
                     "ad_soyad": full_name,
                     "name_key": name_k,
-                    "bolum": "DİĞER",
+                    "cinsiyet": "",
+                    "isletme_giris": "",
+                    "sgk_giris": "",
+                    "kidem": 0,
+                    "sgk_cikis": "",
+                    "sgk_durumu": "NORMAL",
                     "durumu": "MEVSİMLİK",
-                    "net_maas": 0.0
+                    "bolum": "DİĞER",
+                    "ikamet": "",
+                    "net_maas": 0.0,
+                    "sirket": "FİDE KONSERVE",
+                    "mesai_durumu": "ALIR"
                 }
                 self.personnel_list.append(p_data)
                 self.personnel_by_key[name_k] = p_data
+                if sicil:
+                    self.personnel_by_tc[sicil] = p_data
 
             # 18+ saatlik hatalı turnike birleşimlerini 2 ayrı güne ayrıştır
             if g_tarih and g_saat and c_tarih and c_saat:
@@ -595,7 +871,7 @@ class PDKSEngine:
         # Günlük hareketleri hesapla
         self._calculate_daily_results()
 
-    def _add_punch_to_day(self, date_str, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, c_saat):
+    def _add_punch_to_day(self, date_str: str, sira: str, sicil: str, kart: str, gun_adi: str, full_name: str, name_k: str, lokasyon: str, g_saat: str, c_saat: str):
         if not date_str or "." not in str(date_str):
             return
         parts = str(date_str).split(".")
@@ -604,7 +880,7 @@ class PDKSEngine:
             m = int(parts[1])
             if m != self.target_month:
                 return
-        except:
+        except Exception:
             return
             
         k = (name_k, d)
@@ -651,7 +927,9 @@ class PDKSEngine:
             if len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]:
                 g_raw = rows[0]["g_saat"]
                 c_raw = rows[0]["c_saat"]
-                tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h = calculate_shift_hours(g_raw, c_raw)
+                s_res = calculate_shift_hours(g_raw, c_raw)
+                tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                 fiili_sure = tot_h
                 raw_g_str = g_raw[:5]
                 raw_c_str = c_raw[:5]
@@ -666,14 +944,15 @@ class PDKSEngine:
                     c_raw = c_list[-1]
                     raw_g_str = g_raw[:5]
                     raw_c_str = c_raw[:5]
-                    tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h = calculate_shift_hours(g_raw, c_raw)
+                    s_res = calculate_shift_hours(g_raw, c_raw)
+                    tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                    eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                     fiili_sure = tot_h
                     if len(all_punches) > 2:
                         status_type = "ÇOKLU_BASIM_MIN_MAX"
                         is_exception = True
                         audit_note = f"Çoklu Basım: İlk Giriş {raw_g_str}, Son Çıkış {raw_c_str} ({fmt_hours_tr(tot_h)}s)"
                 elif g_list:
-                    # Sadece girişler var
                     g_raw = g_list[0]
                     raw_g_str = g_raw[:5]
                     raw_c_str = "-"
@@ -688,7 +967,9 @@ class PDKSEngine:
                         audit_note = f"Giriş: {raw_g_str} | Çıkış Basılmadı (Tam Gün 7,5s yazıldı)"
                     elif 12 * 60 + 30 < tm < 20 * 60:
                         status_type = "GİRİŞ_YOK_AKŞAM"
-                        tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h = calculate_shift_hours("08:00", g_raw)
+                        s_res = calculate_shift_hours("08:00", g_raw)
+                        tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                        eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                         audit_note = f"Çıkış: {raw_g_str} | Giriş Basılmadı (08:00 başı ile {fmt_hours_tr(tot_h)}s korundu)"
                     else:
                         status_type = "GECE_TEK_BASIM"
@@ -720,7 +1001,9 @@ class PDKSEngine:
                     raw_g_str = "-"
                     raw_c_str = t_s
                     status_type = "GİRİŞ_YOK_AKŞAM"
-                    tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h = calculate_shift_hours("08:00", t_raw)
+                    s_res = calculate_shift_hours("08:00", t_raw)
+                    tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                    eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                     audit_note = f"Çıkış: {t_s} | Giriş Basılmadı (08:00 başı ile {fmt_hours_tr(tot_h)}s korundu)"
                 else:
                     raw_g_str = t_s
@@ -735,24 +1018,17 @@ class PDKSEngine:
                 raw_g_str, raw_c_str = "-", "-"
 
             # -----------------------------------------------------------------
-            # ÖZEL BÖLÜM PRİMLERİ (Balık Dolum/Kesim ve Üretim):
+            # ÖZEL BÖLÜM PRİMLERİ (Konfigürasyondan dinamik hesaplama):
             # -----------------------------------------------------------------
-            if is_balik_dk and fiili_sure >= 10.0:
-                bonus_hours = 2.0
+            bonus_hours, prim_msg = calculate_department_bonus(dept_name, fiili_sure, self.rules)
+            if bonus_hours > 0:
                 tot_h += bonus_hours
                 ot_h += bonus_hours
                 status_type = "BÖLÜM_PRİMLİ"
-                prim_msg = f"{dept_name} Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(tot_h)}s (+2,0s Prim)"
-                audit_note = f"{audit_note} | {prim_msg}" if audit_note else prim_msg
-            elif is_uretim and fiili_sure >= 12.0:
-                bonus_hours = 4.0
-                tot_h += bonus_hours
-                ot_h += bonus_hours
-                status_type = "BÖLÜM_PRİMLİ"
-                prim_msg = f"Üretim Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(tot_h)}s (+4,0s Prim)"
                 audit_note = f"{audit_note} | {prim_msg}" if audit_note else prim_msg
 
             rec = {
+                "sno": len(self.audit_records) + 1,
                 "tarih": date_str,
                 "gun": day_num,
                 "gun_adi": gun_adi,
@@ -776,6 +1052,7 @@ class PDKSEngine:
                 "final_hours": tot_h,
                 "status_type": status_type,
                 "is_exception": is_exception,
+                "is_bonus": (bonus_hours > 0),
                 "audit_note": audit_note
             }
             
@@ -783,9 +1060,11 @@ class PDKSEngine:
             self.audit_records.append(rec)
             if is_exception:
                 self.exception_records.append(rec)
+            if bonus_hours > 0:
+                self.bonus_records.append(rec)
 
-    def get_summary_matrix(self):
-        """Personel bazında 1..30 günlük saat matrisini ve toplamlarını döndürür."""
+    def get_summary_matrix(self) -> List[Dict]:
+        """Personel bazında 1..days_in_month günlük saat matrisini ve toplamlarını döndürür."""
         matrix = []
         for p in self.personnel_list:
             name_k = p["name_key"]
@@ -796,15 +1075,19 @@ class PDKSEngine:
                 "name_key": name_k,
                 "bolum": p["bolum"],
                 "durumu": p["durumu"],
+                "net_maas": p.get("net_maas", 0.0),
+                "mesai_durumu": p.get("mesai_durumu", "ALIR"),
                 "daily_hours": {},
                 "total_work_days": 0,
                 "total_base_hours": 0.0,
                 "total_ot_hours": 0.0,
+                "total_weekday_ot_hours": 0.0,
+                "total_sunday_ot_hours": 0.0,
                 "total_bonus_hours": 0.0,
                 "total_hours": 0.0
             }
             
-            for d in range(1, 31):
+            for d in range(1, self.days_in_month + 1):
                 rec = self.daily_results.get((name_k, d))
                 if rec and rec["final_hours"] > 0:
                     h = rec["final_hours"]
@@ -812,6 +1095,10 @@ class PDKSEngine:
                     row["total_work_days"] += 1
                     row["total_base_hours"] += rec["base_hours"]
                     row["total_ot_hours"] += rec["overtime_hours"]
+                    if d in self.sundays:
+                        row["total_sunday_ot_hours"] += h
+                    else:
+                        row["total_weekday_ot_hours"] += rec["overtime_hours"]
                     row["total_bonus_hours"] += rec["bonus_hours"]
                     row["total_hours"] += h
                 else:
@@ -819,3 +1106,194 @@ class PDKSEngine:
                     
             matrix.append(row)
         return matrix
+
+    def calculate_financial_radar(self) -> Dict[str, Any]:
+        """
+        Tüm personelin net maaş ve saatlik ücretlerini baz alarak:
+        - Toplam normal çalışma maliyeti
+        - Toplam fazla mesai maliyeti (Hafta içi ve Pazar 1.5x)
+        - Toplam bölüm primi maliyeti
+        - Toplam hakediş ve elden fark maliyeti
+        - Departman bazlı anlamlı maliyet ve bütçe analizini (TL, %, kişi başı ortalamalar)
+        üretir.
+        """
+        matrix = self.get_summary_matrix()
+        
+        salary_map = {}
+        for p in self.personnel_list:
+            salary_map[p["name_key"]] = p.get("net_maas", 0.0)
+            
+        total_base_cost = 0.0
+        total_ot_cost = 0.0
+        total_bonus_cost = 0.0
+        total_payroll_cost = 0.0
+        total_bank_cost = 0.0
+        total_cash_diff = 0.0
+        
+        personnel_costs = []
+        dept_costs = {}
+        
+        for m in matrix:
+            if m["total_work_days"] == 0:
+                continue
+                
+            name_k = m["name_key"]
+            tc = m.get("tc", "")
+            net_m = salary_map.get(name_k, 0.0)
+            
+            if net_m <= 0:
+                if tc in self.bordro_by_tc and self.bordro_by_tc[tc].get("odenecek_net", 0.0) > 0:
+                    net_m = self.bordro_by_tc[tc]["odenecek_net"]
+                else:
+                    net_m = 28075.50  # Standart net asgari ücret tabanı
+                    
+            hourly_net = net_m / 225.0
+            # Pazar ve hafta içi mesaisi fabrika kuralı olarak 1.5 kat hesaplanır:
+            ot_hourly_net = hourly_net * 1.5
+            
+            weekday_ot = m.get("total_weekday_ot_hours", 0.0)
+            sunday_ot = m.get("total_sunday_ot_hours", 0.0)
+            all_ot_hours = weekday_ot + sunday_ot
+            
+            base_cost = (net_m / 30.0) * m["total_work_days"]
+            ot_cost = all_ot_hours * ot_hourly_net
+            bonus_cost = m["total_bonus_hours"] * ot_hourly_net
+            total_net_wage = base_cost + ot_cost
+            
+            bank_net = self.bordro_by_tc.get(tc, {}).get("odenecek_net", 0.0)
+            icra_info = self.icra_by_name.get(name_k, {})
+            icra_kes = icra_info.get("kesilen", 0.0) if isinstance(icra_info, dict) else 0.0
+            cash_diff = max(0.0, total_net_wage - bank_net - icra_kes)
+            
+            total_base_cost += base_cost
+            total_ot_cost += ot_cost
+            total_bonus_cost += bonus_cost
+            total_payroll_cost += total_net_wage
+            total_bank_cost += bank_net
+            total_cash_diff += cash_diff
+            
+            dept = m.get("bolum") or "Bilinmeyen"
+            if dept not in dept_costs:
+                dept_costs[dept] = {
+                    "department": dept,
+                    "active_count": 0,
+                    "total_hours": 0.0,
+                    "ot_hours": 0.0,
+                    "bonus_hours": 0.0,
+                    "base_cost": 0.0,
+                    "ot_cost": 0.0,
+                    "bonus_cost": 0.0,
+                    "total_cost": 0.0,
+                    "avg_ot_hours_per_worker": 0.0,
+                    "avg_ot_cost_per_worker": 0.0,
+                    "ot_share_pct": 0.0,
+                    "insight": ""
+                }
+            
+            dept_costs[dept]["active_count"] += 1
+            dept_costs[dept]["total_hours"] += m["total_hours"]
+            dept_costs[dept]["ot_hours"] += all_ot_hours
+            dept_costs[dept]["bonus_hours"] += m["total_bonus_hours"]
+            dept_costs[dept]["base_cost"] += base_cost
+            dept_costs[dept]["ot_cost"] += ot_cost
+            dept_costs[dept]["bonus_cost"] += bonus_cost
+            dept_costs[dept]["total_cost"] += total_net_wage
+            
+            personnel_costs.append({
+                "sno": m["sno"],
+                "tc": tc,
+                "tc_no": tc,
+                "ad_soyad": m["ad_soyad"],
+                "name_key": name_k,
+                "bolum": dept,
+                "work_days": m["total_work_days"],
+                "days_worked": m["total_work_days"],
+                "net_maas": round(net_m, 2),
+                "hourly_net": round(hourly_net, 2),
+                "hourly_base_rate": round(hourly_net, 2),
+                "ot_hourly_net": round(ot_hourly_net, 2),
+                "hourly_overtime_rate": round(ot_hourly_net, 2),
+                "total_hours": round(m["total_hours"], 1),
+                "weekday_ot_hours": round(weekday_ot, 1),
+                "sunday_ot_hours": round(sunday_ot, 1),
+                "sunday_ot_cost": round(sunday_ot * ot_hourly_net, 2),
+                "all_ot_hours": round(all_ot_hours, 1),
+                "total_ot_hours": round(all_ot_hours, 1),
+                "ot_cost": round(ot_cost, 2),
+                "overtime_cost": round(ot_cost, 2),
+                "bonus_hours": round(m["total_bonus_hours"], 1),
+                "bonus_cost": round(bonus_cost, 2),
+                "base_cost": round(base_cost, 2),
+                "total_net_wage": round(total_net_wage, 2),
+                "total_net_earned": round(total_net_wage, 2),
+                "bank_net": round(bank_net, 2),
+                "icra": round(icra_kes, 2),
+                "cash_diff": round(cash_diff, 2),
+                "cash_difference": round(cash_diff, 2)
+            })
+            
+        # Departman ortalamaları ve anlamlı yönetim içgörüleri (Insights)
+        for dept, d_data in dept_costs.items():
+            cnt = d_data["active_count"]
+            d_data["avg_ot_hours_per_worker"] = round(d_data["ot_hours"] / cnt, 1) if cnt > 0 else 0.0
+            d_data["avg_overtime_hours_per_worker"] = d_data["avg_ot_hours_per_worker"]
+            d_data["avg_ot_cost_per_worker"] = round(d_data["ot_cost"] / cnt, 2) if cnt > 0 else 0.0
+            d_data["avg_overtime_cost_per_worker"] = d_data["avg_ot_cost_per_worker"]
+            d_data["ot_share_pct"] = round((d_data["ot_cost"] / total_ot_cost * 100), 1) if total_ot_cost > 0 else 0.0
+            d_data["overtime_budget_share_pct"] = d_data["ot_share_pct"]
+            d_data["overtime_cost"] = round(d_data["ot_cost"], 2)
+            
+            # Anlamlı analiz metinleri
+            norm_dept = dept.upper()
+            if "DOLUM" in norm_dept:
+                d_data["insight"] = f"Kişi başı en yüksek mesai yoğunluğu: Sadece {cnt} çalışan kişi başı {d_data['avg_ot_hours_per_worker']} saat mesai yaptı ({d_data['avg_ot_cost_per_worker']:,.2f} TL/kişi)."
+            elif "TEMİZLEME" in norm_dept:
+                d_data["insight"] = f"Fabrikanın en kalabalık birimi ({cnt} aktif). Toplam mesai harcamasının %{d_data['ot_share_pct']}'ini oluşturuyor."
+            elif "ÜRETİM" in norm_dept or "URETIM" in norm_dept:
+                d_data["insight"] = f"Fabrikanın en yüksek toplam mesai tutarı (%{d_data['ot_share_pct']} pay, {d_data['ot_cost']:,.2f} TL)."
+            elif "AMBAR" in norm_dept:
+                d_data["insight"] = f"Sevkiyat ve hammadde kabul yoğunluğu ({d_data['ot_cost']:,.2f} TL mesai harcaması)."
+            elif "BAKIM" in norm_dept:
+                d_data["insight"] = f"Hat arıza ve revizyon nedeniyle yüksek saatlik maliyet ({d_data['ot_cost']:,.2f} TL)."
+            else:
+                d_data["insight"] = f"{d_data['ot_hours']} saat mesai, ortalama {d_data['avg_ot_hours_per_worker']} saat/kişi."
+
+        # Maliyete göre sıralı departman listesi
+        sorted_depts = sorted(dept_costs.values(), key=lambda x: x["ot_cost"], reverse=True)
+        
+        # En yüksek departmanlar
+        top_ot_dept = sorted_depts[0]["department"] if sorted_depts else "-"
+        # En yoğun kişi başı çalışan departman
+        top_intensity_dept = max(sorted_depts, key=lambda x: x["avg_ot_hours_per_worker"])["department"] if sorted_depts else "-"
+        
+        total_all_ot = sum(p["all_ot_hours"] for p in personnel_costs)
+        avg_rate = round(total_ot_cost / total_all_ot, 2) if total_all_ot > 0 else 0.0
+
+        summary_dict = {
+            "total_active_personnel": len(personnel_costs),
+            "total_personnel_active": len(personnel_costs),
+            "total_hours": round(sum(p["total_hours"] for p in personnel_costs), 1),
+            "total_ot_hours": round(total_all_ot, 1),
+            "total_overtime_hours": round(total_all_ot, 1),
+            "total_bonus_hours": round(sum(p["bonus_hours"] for p in personnel_costs), 1),
+            "total_base_cost": round(total_base_cost, 2),
+            "total_ot_cost": round(total_ot_cost, 2),
+            "total_overtime_cost": round(total_ot_cost, 2),
+            "total_bonus_cost": round(total_bonus_cost, 2),
+            "total_payroll_cost": round(total_payroll_cost, 2),
+            "total_payroll_budget": round(total_payroll_cost, 2),
+            "total_bank_cost": round(total_bank_cost, 2),
+            "total_cash_diff": round(total_cash_diff, 2),
+            "avg_ot_hourly_rate": avg_rate,
+            "average_overtime_rate_per_hour": avg_rate,
+            "top_ot_department": top_ot_dept,
+            "top_intensity_department": top_intensity_dept
+        }
+
+        return {
+            "summary": summary_dict,
+            "departments": sorted_depts,
+            "department_breakdown": sorted_depts,
+            "personnel": personnel_costs,
+            "personnel_costs": personnel_costs
+        }

@@ -5,7 +5,16 @@ __pycache__/
 .venv/
 venv/
 .env
+.pytest_cache/
+scratch/
+
+# Geçici ve yedek dosyalar
+*_backup.*
+*_yedek.*
+*_test.xls
+*guncel.xlsx
 
 # Excel geçici ve kilit dosyaları
 ~$*
 *.tmp
+

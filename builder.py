@@ -2,1075 +2,78 @@
 """
 ===================================================================================================
 FİDE KONSERVE
-Puantaj ve PDKS Entegrasyonu, Akıllı Vardiya Analizi ve Modern Excel Raporlama Sistemi
+Puantaj ve PDKS Entegrasyonu, Akıllı Vardiya Analizi ve Modern Excel Raporlama Sistemi (builder.py)
 ===================================================================================================
 
-Bu script, işletmenin ham PDKS (turnike) verilerini ve mevcut bordro/personel tablolarını uçtan uca
-işleyerek hatasız, canlı formüllü ve denetlenebilir modern bir Excel (puantaj.xlsx) çalışma kitabı üretir.
-
----------------------------------------------------------------------------------------------------
-TEMEL GÖREVLER VE İŞ MANTIĞI:
----------------------------------------------------------------------------------------------------
-1. PDKS HAREKETLERİNİN AKILLI ANALİZİ (pdks.xls):
-   - Mükerrer / Peş Peşe Basım Filtresi: Turnikede 5 dakika içinde peş peşe yapılan çift basımları
-     otomatik olarak filtreler ve tekil hareket kabul eder.
-   - Çoklu Basım Yönetimi (Min/Max Kuralı): Kişinin gün içinde 3 veya daha fazla kart basımı varsa
-     en erken saati GİRİŞ (MIN), en geç saati ÇIKIŞ (MAX) kabul ederek net çalışma süresini hesaplar.
-     Bu hücreler insan kontrolü için görsel olarak işaretlenir.
-   - Unutulan / Tek Basım Yönetimi (Eksik Basım):
-     * Sabah basıp akşam çıkış basmayanlar: Hak kaybı yaşanmaması için 7.5 saat (tam gün) yazılır.
-     * Sabah basmayı unutup akşam çıkış basanlar: 08:00 iş başı kabul edilerek çıkış saatine göre
-       hak ettiği fazla mesaisi korunarak yazılır (Örn: 18:12 çıkış -> 8.5 saat).
-     * Tüm eksik basımlar 'Aylik_Puantaj' sayfasında TURUNCU renkle boyanır, hücreye detaylı açıklama
-       notu eklenir ve 'Eksik_Basim_Raporu' sayfasında amir onayına sunulur.
-
-2. ÖZEL BÖLÜM PRİMLERİ VE BONUS MESAİ KURALLARI:
-   - Balık Dolum ve Balık Kesim Ekipleri:
-     * Fiili çalışma süresi 10 saat ve üzeri olduğunda net çalışma süresine +2.0 saat prim eklenir.
-       (Örn: 10 saat çalışan -> 12 saat, 11 saat çalışan -> 13 saat, 11.5 saat çalışan -> 13.5 saat yazılır).
-     * 10 saatin altındaki çalışmalarda standart kademeler geçerlidir.
-   - Üretim Ekibi (Üretim & Konserve Üretim Elemanı):
-     * Fiili çalışma süresi 12 saat ve üzeri olduğunda net çalışma süresine +4.0 saat prim eklenir.
-       (Örn: 12 saat çalışan -> 16 saat, 13 saat çalışan -> 17 saat, 14 saat çalışan -> 18 saat yazılır).
-     * 12 saatin altındaki çalışmalarda standart kademeler geçerlidir.
-   - Tüm bu bonuslu mesai günleri 'Aylik_Puantaj' sayfasında LİLA/MOR renkle işaretlenir ve
-     'Bolum_Prim_Mesai_Raporu' sayfasında amir kontrolüne sunulur.
-
-3. STANDART VARDİYA VE FAZLA MESAİ KURALLARI (Diğer Bölümler):
-   - 1. Vardiya (Gündüz): 08:00 - 17:00 (8-5) ve 08:00 - 16:00 (8-4)
-     * Sabah Toleransı: 08:20'ye kadar gelenlerin başlangıcı 08:00 kabul edilir (tam 7.5h).
-       08:21 ve sonrası her 30 dakikada bir yarım saat mesai kesintisi uygulanır.
-     * Akşam Çıkış & Fazla Mesai (8-5 için):
-       - 17:00 - 17:25 arası çıkış -> 7.5 saat (Fazla Mesai Yok)
-       - 17:26 - 17:49 arası çıkış -> 8.0 saat (+0.5 saat FM)
-       - 17:50 - 18:25 arası çıkış -> 8.5 saat (+1.0 saat FM)
-       - 18:26 - 18:49 arası çıkış -> 9.0 saat (+1.5 saat FM)
-       - 18:50 - 19:25 arası çıkış -> 9.5 saat (+2.0 saat FM)
-       - 19:26 - 19:49 arası çıkış -> 10.0 saat (+2.5 saat FM)
-       - 19:50 - 20:25 arası çıkış -> 10.5 saat (+3.0 saat FM)
-       - 20:26 - 20:49 arası çıkış -> 11.0 saat (+3.5 saat FM)
-   - 2. Vardiya (Akşam) : 16:00 - 24:00 (16-24)
-   - 3. Vardiya (Gece)  : 24:00 - 08:00 (24-8 / 00:00 - 08:00)
-
-4. ÇOK SAYFALI VE CANLI FORMÜLLÜ MODERN EXCEL ÜRETİMİ (openpyxl):
-   - Aylik_Puantaj: 30 günlük çalışma süreleri, dinamik SUM, COUNTIF, IF, MIN ve VLOOKUP formülleri.
-   - Eksik_Basim_Raporu: İnsan kontrolü gerektiren tüm istisna ve tek/çoklu basımların denetim listesi.
-   - Bolum_Prim_Mesai_Raporu: Balık Dolum/Kesim ve Üretim ekiplerinin primli mesai denetim cetveli.
-   - Resmi_Bordro_SGK, Icra_Takip, SGK_Raporlar, Ucretli_Izinler, Daimi_Personel_Listesi, Elden_Odeme_Farki.
-===================================================================================================
+Bu modül, çekirdek hesaplama motoru (PDKSEngine) üzerinden ham PDKS turnike verilerini ve
+bordro/personel tablolarını uçtan uca işleyerek hatasız, canlı formüllü ve 10 sayfalı
+modern bir Excel (puantaj.xlsx) çalışma kitabı üretir.
 """
 
-import xlrd
+import os
+import shutil
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
-import re
-import os
-import shutil
-import unicodedata
-from collections import defaultdict
-from datetime import datetime
 
-# =================================================================================================
-# 1. TÜRKÇE KARAKTER VE KELİME ONARIM SÖZLÜĞÜ
-# =================================================================================================
-WORD_REPLACEMENTS = {
-    "RENLOLU": "İRENLİOĞLU",
-    "ETN": "ÇETİN",
-    "ADVYE": "ADVİYE",
-    "AFFE": "AFİFE",
-    "KLTER": "KÜLTER",
-    "ENER": "ŞENER",
-    "AKICI": "ÇAKICI",
-    "AYLAK": "ÇAYLAK",
-    "TRK": "TÜRKÜ",
-    "EREF": "EŞREF",
-    "GNEY": "GÜNEY",
-    "GLL": "GÜLLÜ",
-    "GLDANE": "GÜLDANE",
-    "GLSM": "GÜLSÜM",
-    "GLAH": "GÜLŞAH",
-    "GLEN": "GÜLŞEN",
-    "GZDE": "GÜZİDE",
-    "GLER": "GÜLER",
-    "GZN": "GÜZİN",
-    "GNAY": "GÜNAY",
-    "GRDAL": "GÜRDAL",
-    "GRGEN": "GÜRGEN",
-    "GRGN": "GÜRGÜN",
-    "GZELDAL": "GZELDAL",
-    "ZKAN": "ÖZKAN",
-    "ZDEMR": "ÖZDEMİR",
-    "ZCAN": "ÖZCAN",
-    "ZTRK": "ÖZTÜRK",
-    "ZMEN": "ÖZMEN",
-    "ZEN": "ÖZEN",
-    "ZALP": "ÖZALP",
-    "ZBEK": "ÖZBEK",
-    "ZTOP": "ÖZTOP",
-    "NAL": "ÜNAL",
-    "NL": "ÜNLÜ",
-    "STN": "ÜSTÜN",
-    "MT": "ÜMİT",
-    "MM": "ÜMMÜ",
-    "MMGLSM": "ÜMMÜGÜLSÜM",
-    "LK": "ÜLKÜ",
-    "LKER": "ÜLKER",
-    "LKNUR": "İLKNUR",
-    "LHAN": "İLHAN",
-    "LYAS": "İLYAS",
-    "SMAL": "İSMAİL",
-    "BRAHM": "İBRAHİM",
-    "NC": "İNCİ",
-    "PEK": "İPEK",
-    "MREN": "İMREN",
-    "REM": "İREM",
-    "RFAN": "İRFAN",
-    "SMET": "İSMET",
-    "HSAN": "İHSAN",
-    "DRS": "İDRİS",
-    "IKCAN": "ÇIKCAN",
-    "AKIR": "ÇAKIR",
-    "AKMAK": "ÇAKMAK",
-    "ELK": "ÇELİK",
-    "ETNKAYA": "ÇETİNKAYA",
-    "OBAN": "ÇOBAN",
-    "COKUN": "COŞKUN",
-    "ALAR": "ÇAĞLAR",
-    "ELEN": "ÇELEN",
-    "EVK": "ÇEVİK",
-    "FT": "ÇİFTÇİ",
-    "ATAL": "ÇATAL",
-    "DADELEN": "DAĞDELEN",
-    "BOZDEMR": "BOZDEMİR",
-    "ELSIKI": "ELİSIKI",
-    "FDAN": "FİDAN",
-    "DRENC": "DİRENCİ",
-    "BLG": "BİLGİ",
-    "MAKAK": "MAKAK",
-    "TEMREN": "TEMREN",
-    "BAI": "BAŞI",
-    "GDER": "GİDER",
-    "GR": "GİRİŞ",
-    "IKI": "ÇIKIŞ",
-    "MEVSMLK": "MEVSİMLİK",
-    "DAM": "DAİMİ",
-    "EMEKL": "EMEKLİ",
-    "ZN": "İZİN",
-    "MESA": "MESAİ",
-    "TATL": "TATİL",
-    "ALIMA": "ÇALIŞMA",
-    "CRET": "ÜCRET",
-    "KIDEM": "KIDEM",
-    "BLM": "BÖLÜM",
-    "KAMET": "İKAMET",
-    "RKET": "ŞİRKET",
-    "SAAT": "SAATİ",
-    "GN": "GÜNÜ",
-    "ST": "SÖĞÜT",
-    "SGT": "SÖGÜT",
-    "BRA": "BÜŞRA",
-    "YUCEL": "YÜCEL",
-    "SILA ZER": "SILA ÖZER",
-}
+from pdks_engine import (
+    PDKSEngine,
+    clean_str,
+    clean_tc,
+    clean_money,
+    norm_name_key,
+    fmt_hours_tr
+)
 
-def clean_display_text(text):
-    """
-    Excel hücrelerinde görüntülenecek metinleri temizler ve bozuk Türkçe karakterleri düzeltir.
-    Kelimelerin içindeki harfleri bozmadan tam kelime/token düzeyinde onarım yapar.
-    """
-    if not text:
-        return ""
-    s = str(text).strip()
-    words = s.split()
-    fixed_words = []
-    for w in words:
-        if w in WORD_REPLACEMENTS:
-            fixed_words.append(WORD_REPLACEMENTS[w])
-        else:
-            w_fixed = w
-            for k, v in WORD_REPLACEMENTS.items():
-                if len(k) > 2:
-                    w_fixed = w_fixed.replace(k, v)
-                else:
-                    w_fixed = re.sub(r'\b' + re.escape(k) + r'\b', v, w_fixed)
-            fixed_words.append(w_fixed)
-    s = " ".join(fixed_words)
-    s = s.replace("\ufffd", "").replace("", "")
-    s = re.sub(r"\s+", " ", s)
-    return s.strip()
-
-def get_day_name(date_str):
-    """Tarih metninden (GG.AA.YYYY) Türkçe gün adını döndürür."""
-    if not date_str:
-        return ""
-    try:
-        parts = str(date_str).split(".")
-        if len(parts) >= 3:
-            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
-            dt = datetime(y, m, d)
-            days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
-            return days[dt.weekday()]
-    except:
-        pass
-    return ""
-
-def norm_hdr(h):
-    """Sütun başlıklarını eşleştirmek için normalize eder."""
-    s = str(h).strip().lower()
-    s = s.replace("ı", "i").replace("İ", "i").replace("ş", "s").replace("Ş", "s")
-    s = s.replace("ç", "c").replace("Ç", "c").replace("ğ", "g").replace("Ğ", "g")
-    s = s.replace("ü", "u").replace("Ü", "u").replace("ö", "o").replace("Ö", "o")
-    return re.sub(r"[^a-z0-9]", "", s)
-
-def resolve_pdks_columns(sh):
-    """
-    PDKS Excel sayfasındaki başlıkları dinamik olarak analiz eder ve sütun indekslerini döndürür.
-    Böylece 8 sütunlu, 12 sütunlu, 29 sütunlu veya sütun sırası değişen tüm formatları hatasız destekler.
-    """
-    hdr_map = {}
-    if sh.nrows > 0:
-        for c in range(sh.ncols):
-            hdr_map[norm_hdr(sh.cell_value(0, c))] = c
-
-    def find_col(candidates, default=None):
-        for cand in candidates:
-            if cand in hdr_map:
-                return hdr_map[cand]
-        return default
-
-    is_legacy_29 = sh.ncols >= 20
-
-    return {
-        "sira": find_col(["sira", "sirano", "sno"], 0 if is_legacy_29 else None),
-        "sicil": find_col(["sicil", "sicilno", "tc", "tckimlik", "tckimlikno", "personelno"], 2 if is_legacy_29 else None),
-        "kart": find_col(["kart", "kartno"], 3 if is_legacy_29 else None),
-        "gun_adi": find_col(["gun", "gunadi", "gunler"], 4 if is_legacy_29 else None),
-        "adi": find_col(["ad", "adi", "personeladi", "isim"], 5 if is_legacy_29 else 0),
-        "soyadi": find_col(["soyad", "soyadi", "personelsoyadi"], 6 if is_legacy_29 else 1),
-        "ad_soyad": find_col(["adsoyad", "personel", "adisoyadi"]),
-        "lokasyon": find_col(["lokasyon", "lokasyonkodu", "kapi", "yer", "bolge"], 7 if is_legacy_29 else 2),
-        "g_tarih": find_col(["giristarihi", "gtarih", "giristarih", "bastarih", "tarih"], 8 if is_legacy_29 else 3),
-        "g_saat": find_col(["girissaati", "gsaat", "girissaat", "bassaat"], 9 if is_legacy_29 else 4),
-        "c_tarih": find_col(["cikistarihi", "ctarih", "cikistarih", "bittarih"], 10 if is_legacy_29 else 5),
-        "c_saat": find_col(["cikissaati", "csaat", "cikissaat", "bitsaat"], 11 if is_legacy_29 else 6),
-        "puantaj_tarih": find_col(["puantajtarihi", "ptarih", "puantajtarih"], 18 if sh.ncols > 18 else None),
-    }
-
-def norm_name_key(s):
-    """
-    PDKS listesi ile Puantaj personel listesi arasındaki isimleri %100 eşleştirmek için
-    özel karakterleri, parantez içi lakapları ve ekleri arındıran kanonik anahtar üretir.
-    """
-    if not s:
-        return ""
-    s = str(s).strip()
-    s = re.sub(r"\(.*?\)", "", s)  # (BASİL), (SEMİH) gibi parantez içi ekleri kaldır
-    s = re.sub(r"-.*$", "", s)      # -MKP gibi tire sonrası ekleri kaldır
-    s = s.replace("\ufffd", "I").replace("", "")
-    s = unicodedata.normalize("NFKD", s)
-    s = re.sub(r"[^a-zA-Z0-9]", "", s).upper()
-    
-    # Özel isim varyasyonları eşleştirmesi
-    aliases = {
-        "SAMETYUMITKEN": "SAMETYUMITKAN",
-        "SERKANYUMITKEN": "SERKANYUMITKAN",
-        "SELAHATTINSOGUT": "SELAHATTINSOGUT",
-        "SELAHATTINSIT": "SELAHATTINSOGUT",
-        "SELAHATTINSIGIT": "SELAHATTINSOGUT",
-        "SELAHATTINSUGUT": "SELAHATTINSOGUT",
-        "BUSRAYAVRUTURK": "BUSRAYAVRUKURT",
-        "AYSEYILMAZ": "AYSEYILMAZ",
-        "MHDBASSELALZALEK": "MHDBASSELALZALEK",
-        "MUHAMMEDSAMIHSERHAN": "MUHAMMEDSAMIHSERHAN",
-    }
-    return aliases.get(s, s)
-
-def clean_tc(tc_val):
-    """
-    TC Kimlik Numarasını temizler, 11 haneli standart metin formatına getirir.
-    """
-    if tc_val is None:
-        return ""
-    if isinstance(tc_val, float):
-        if tc_val.is_integer():
-            s = str(int(tc_val)).strip()
-        else:
-            s = str(int(round(tc_val))).strip()
-    else:
-        s = str(tc_val).replace(".0", "").strip()
-    s = re.sub(r"\D", "", s)
-    if not s:
-        return ""
-    if len(s) == 10:
-        s = "0" + s
-    return s
-
-def clean_str(val):
-    """
-    Genel metin alanlarını temizler ve Türkçe karakter onarımından geçirir.
-    """
-    if val is None:
-        return ""
-    if isinstance(val, float) and val.is_integer():
-        return str(int(val)).strip()
-    return clean_display_text(str(val).strip())
-
-def clean_money(val):
-    """
-    Parasal değerleri güvenli float formatına dönüştürür.
-    """
-    if val is None or val == "":
-        return 0.0
-    try:
-        return float(val)
-    except:
-        return 0.0
-
-def parse_time_str(s):
-    """
-    '08:30' formatındaki saat dizgisini sayısal ondalık saate (8.5) dönüştürür.
-    """
-    if not s or s == "":
-        return 0.0
-    s = str(s).strip()
-    if ":" in s:
-        parts = s.split(":")
-        try:
-            h = float(parts[0])
-            m = float(parts[1]) if len(parts) > 1 else 0.0
-            return round(h + m / 60.0, 2)
-        except:
-            return 0.0
-    try:
-        return float(s)
-    except:
-        return 0.0
-
-def xldate_to_str(val):
-    """
-    Excel seri tarih sayılarını 'GG.AA.YYYY' formatlı metne dönüştürür.
-    """
-    if isinstance(val, (int, float)) and val > 30000 and val < 60000:
-        try:
-            return xlrd.xldate.xldate_as_datetime(val, 0).strftime("%d.%m.%Y")
-        except:
-            return str(val)
-    return str(val) if val is not None else ""
-
-def get_sheet_by_keyword(wb, keyword, default_idx=None):
-    """
-    İsminde belirli bir anahtar kelime geçen sayfayı bulur.
-    """
-    for s in wb.sheets():
-        if keyword.lower() in s.name.lower():
-            return s
-    if default_idx is not None and default_idx < len(wb.sheets()):
-        return wb.sheet_by_index(default_idx)
-    return None
-
-def parse_hm(t_str):
-    """
-    '08:15:00' formatından (saat, dakika) tuple'ı döndürür.
-    """
-    if not t_str or ":" not in str(t_str):
-        return None
-    p = str(t_str).strip().split(":")
-    try:
-        return int(p[0]), int(p[1])
-    except:
-        return None
-
-def parse_d_hm(d_str, t_str):
-    """
-    '03.09.2026' ve '08:15:00' metinlerinden datetime nesnesi üretir.
-    """
-    if not d_str or not t_str or ":" not in str(t_str):
-        return None
-    try:
-        p_d = str(d_str).strip().split(".")
-        d, m, y = int(p_d[0]), int(p_d[1]), int(p_d[2])
-        p_t = str(t_str).strip().split(":")
-        h, mn = int(p_t[0]), int(p_t[1])
-        return datetime(y, m, d, h, mn)
-    except:
-        return None
-
-def fmt_hm(mins):
-    """
-    00:00'dan itibaren geçen toplam dakikayı 'SS:DD' metnine dönüştürür.
-    """
-    h = (mins // 60) % 24
-    m = mins % 60
-    return f"{h:02d}:{m:02d}"
-
-def fmt_hours_tr(val):
-    """
-    Sayısal saat değerini Türkçe standartlarında virgüllü metne dönüştürür: 7.5 -> '7,5', 13.0 -> '13,0'
-    """
-    if isinstance(val, (int, float)):
-        return f"{val:.1f}".replace(".", ",")
-    return str(val).replace(".", ",")
-
-# =================================================================================================
-# 2. VARDİYA & FAZLA MESAİ HESAPLAMA MOTORU
-# =================================================================================================
-def calc_factory_worked_hours(g_saat_str, c_saat_str, sure_str="", is_office=False):
-    """
-    Fabrika Standart Vardiya ve Fazla Mesai Hesaplama Motoru:
-    - 08:20 sabah toleransı ve kademeli geç kalma kesintisi.
-    - 17:00 sonrası kademeli fazla mesai aralıkları (17:26-17:49 -> 8.0h, 17:50-18:25 -> 8.5h vb.).
-    - 3 vardiya (8-4, 16-24, 24-8) tam desteği.
-    """
-    g = parse_hm(g_saat_str)
-    c = parse_hm(c_saat_str)
-    
-    if not g or not c:
-        return 7.5, 0.0
-        
-    g_min = g[0] * 60 + g[1]
-    c_min = c[0] * 60 + c[1]
-    
-    # Giriş ve çıkış aynı dakikadaysa (çift basım)
-    if abs(c_min - g_min) <= 3:
-        return 7.5, 0.0
-        
-    if c_min < g_min:
-        c_min += 24 * 60
-        
-    # 1. GÜNDÜZ VARDİYASI (06:00 - 11:59 Giriş)
-    if 6 * 60 <= g_min <= 11 * 60 + 59:
-        if g_min <= 8 * 60 + 20:
-            effective_start = 8 * 60
-            base_hours = 7.5
-        else:
-            diff = g_min - (8 * 60 + 20)
-            cuts = (diff - 1) // 30 + 1
-            effective_start = 8 * 60 + cuts * 30
-            base_hours = max(0.0, 7.5 - cuts * 0.5)
-            
-        # 8-4 vardiyası tam bitiş aralığı
-        if 15 * 60 + 50 <= c_min <= 16 * 60 + 25:
-            return 7.5, 0.0
-            
-        # 8-5 vardiyası normal bitişi (17:00) veya erken çıkış
-        shift_end = 17 * 60
-        if c_min < shift_end:
-            elapsed_h = (c_min - effective_start) / 60.0
-            if elapsed_h <= 0:
-                return 0.0, 0.0
-            # Öğle molası öncesi çıkış (12:00 ve öncesi): Mola kesintisi YOK (Tam fiili süre, örn: 08-11 -> 3.0h)
-            if c_min <= 12 * 60:
-                net = elapsed_h
-            # Öğle molası esnası (12:01 - 13:00): 12:00'ye kadar olan net süre
-            elif c_min < 13 * 60:
-                net = max(0.0, (12 * 60 - effective_start) / 60.0)
-            # Öğleden sonra çıkış (13:00 ve sonrası, örn: 08-14 -> 4.5h, 08-15 -> 5.5h): 1.5h mola kesilir
-            else:
-                net = max(0.0, elapsed_h - 1.5)
-                
-            return round(net * 2) / 2.0, 0.0
-            
-        ot_min = c_min - shift_end
-
-    # 2. ÖĞLEDEN SONRA / KISMİ GÜNDÜZ ÇALIŞMASI (12:00 - 15:59 Giriş)
-    # Örn: 13:00 - 15:00 -> 2.0h, 13:00 - 17:00 -> 4.0h (Yemek molası kesintisi YOK)
-    elif 12 * 60 <= g_min < 16 * 60:
-        elapsed_h = (c_min - g_min) / 60.0
-        if c_min <= 17 * 60 + 25:
-            net = elapsed_h
-            return round(net * 2) / 2.0, 0.0
-        elif c_min < 24 * 60:
-            net = max(0.0, elapsed_h - 0.5)
-            return round(net * 2) / 2.0, 0.0
-        else:
-            shift_end = 24 * 60
-            ot_min = c_min - shift_end
-            base_hours = 7.5
-
-    # 3. AKŞAM VARDİYASI (16:00 - 19:59 Giriş)
-    elif 16 * 60 <= g_min <= 19 * 60 + 59:
-        shift_end = 24 * 60
-        if g_min <= 16 * 60 + 20:
-            effective_start = 16 * 60
-            base_hours = 7.5
-        else:
-            diff = g_min - (16 * 60 + 20)
-            cuts = (diff - 1) // 30 + 1
-            effective_start = 16 * 60 + cuts * 30
-            base_hours = max(0.0, 7.5 - cuts * 0.5)
-            
-        if c_min < shift_end:
-            elapsed_h = (c_min - effective_start) / 60.0
-            if elapsed_h <= 4.0:
-                net = elapsed_h
-            else:
-                net = max(0.0, elapsed_h - 0.5)
-            return round(net * 2) / 2.0, 0.0
-            
-        ot_min = c_min - shift_end
-
-    # 4. GECE VARDİYASI (20:00 - 05:59 Giriş)
-    else:
-        shift_end = 32 * 60 if g_min >= 20 * 60 else 8 * 60
-        effective_start = 24 * 60 if g_min >= 20 * 60 else 0
-        base_hours = 7.5
-        
-        if c_min < shift_end:
-            raw_w = (c_min - effective_start) / 60.0
-            if raw_w <= 4.0:
-                net = raw_w
-            else:
-                net = max(0.0, raw_w - 0.5)
-            return round(net * 2) / 2.0, 0.0
-            
-        ot_min = c_min - shift_end
-
-    # Kademeli Fazla Mesai Basamakları
-    if ot_min <= 25:
-        step = 0
-    else:
-        hours_past = ot_min // 60
-        min_in_hour = ot_min % 60
-        if min_in_hour <= 25:
-            step = hours_past * 2
-        elif min_in_hour <= 49:
-            step = hours_past * 2 + 1
-        else:
-            step = hours_past * 2 + 2
-            
-    fm = step * 0.5
-    total = base_hours + fm
-    return total, fm
-
-# =================================================================================================
-# 3. ANA ÇALIŞTIRMA VE RAPOR ÜRETİM FONKSİYONU
-# =================================================================================================
-def main():
+def build_puantaj_workbook(
+    pdks_path: str = "pdks.xls",
+    puantaj_path: str = "puantaj.xls",
+    target_month: int = 9,
+    target_year: int = 2026,
+    output_filename: str = "puantaj.xlsx"
+) -> str:
     print("==================================================")
     print(" FİDE KONSERVE - PUANTAJ VE PDKS İŞLEME SİSTEMİ")
     print("==================================================")
 
-    # Orijinal puantaj.xls dosyasını yedekten tazele
-    if os.path.exists("puantaj_backup.xls"):
+    # Güvenli yedek kontrolü: Orijinal puantaj.xls yoksa yedekten kopyala (asla üzerine yazma)
+    if os.path.exists("puantaj_backup.xls") and not os.path.exists(puantaj_path):
         try:
-            shutil.copyfile("puantaj_backup.xls", "puantaj.xls")
-        except:
-            pass
-
-    print("1. 'puantaj.xls' ve 'pdks.xls' dosyaları yükleniyor...")
-    wb_old = xlrd.open_workbook("puantaj.xls", encoding_override="cp1254")
-    wb_pdks = xlrd.open_workbook("pdks.xls", encoding_override="cp1254")
+            shutil.copyfile("puantaj_backup.xls", puantaj_path)
+            print("   -> 'puantaj.xls' bulunamadı, 'puantaj_backup.xls' üzerinden oluşturuldu.")
+        except Exception as e:
+            print(f"   -> Yedek kopyalama uyarısı: {e}")
 
     # =========================================================================
-    # 1. PERSONEL VE BÖLÜM BİLGİLERİNİN PUANTAJDAN ÇEKİLMESİ
+    # 1. ÇEKİRDEK HESAPLAMA MOTORUNUN ÇALIŞTIRILMASI
     # =========================================================================
-    sh_p = get_sheet_by_keyword(wb_old, "puantaj", 0)
-    puantaj_rows = []
-    seen_tcs = {}
-    emp_dept_map = {}
+    print(f"1. PDKSEngine motoru başlatılıyor ({target_month:02d}.{target_year})...")
+    engine = PDKSEngine(
+        pdks_path=pdks_path,
+        puantaj_path=puantaj_path,
+        target_month=target_month,
+        target_year=target_year
+    )
 
-    for r in range(2, sh_p.nrows):
-        sno = clean_str(sh_p.cell_value(r, 0))
-        tc = clean_tc(sh_p.cell_value(r, 1))
-        ad_soyad = clean_str(sh_p.cell_value(r, 2))
-        cinsiyet = clean_str(sh_p.cell_value(r, 3))
-        isletme_giris = xldate_to_str(sh_p.cell_value(r, 4))
-        sgk_giris = xldate_to_str(sh_p.cell_value(r, 5))
-        kidem = sh_p.cell_value(r, 6)
-        sgk_cikis = xldate_to_str(sh_p.cell_value(r, 7))
-        sgk_durumu = clean_str(sh_p.cell_value(r, 8))
-        durumu = clean_str(sh_p.cell_value(r, 9))
-        bolum = clean_str(sh_p.cell_value(r, 10))
-        ikamet = clean_str(sh_p.cell_value(r, 11))
-        net_maas = clean_money(sh_p.cell_value(r, 12))
-        sirket = clean_str(sh_p.cell_value(r, 13))
-        mesai_durumu = clean_str(sh_p.cell_value(r, 14))
-        
-        if not ad_soyad:
-            continue
-            
-        name_k = norm_name_key(ad_soyad)
-        if bolum:
-            emp_dept_map[name_k] = bolum
-            
-        if tc and tc in seen_tcs:
-            continue
-        if tc:
-            seen_tcs[tc] = ad_soyad
-            
-        puantaj_rows.append({
-            "sno": len(puantaj_rows) + 1,
-            "tc": tc,
-            "ad_soyad": ad_soyad,
-            "cinsiyet": cinsiyet,
-            "isletme_giris": isletme_giris,
-            "sgk_giris": sgk_giris,
-            "kidem": kidem,
-            "sgk_cikis": sgk_cikis,
-            "sgk_durumu": sgk_durumu if sgk_durumu else "NORMAL",
-            "durumu": durumu if durumu else "MEVSİMLİK",
-            "bolum": bolum,
-            "ikamet": ikamet,
-            "net_maas": net_maas,
-            "sirket": sirket if sirket else "FİDE KONSERVE",
-            "mesai_durumu": mesai_durumu if mesai_durumu else "ALIR"
-        })
+    p_count = engine.load_personnel()
+    print(f"   -> Puantaj tablosundan {p_count} personel yüklendi.")
 
-    print(f"   -> Puantaj tablosundan {len(puantaj_rows)} personel yüklendi.")
+    engine.load_and_process_pdks()
+    print(f"   -> PDKS hareketleri işlendi ({len(engine.audit_records)} hareket, "
+          f"{len(engine.exception_records)} istisna, {len(engine.bonus_records)} bölüm primi).")
+
+    engine.load_payroll_sheets()
+    print(f"   -> Bordro ek tabloları okundu ({len(engine.rapor_list)} rapor, "
+          f"{len(engine.icra_list)} icra, {len(engine.izin_list)} izin, {len(engine.bordro_list)} SGK bordro).")
+
+    puantaj_rows = engine.personnel_list
+    emp_pdks_daily = engine.daily_results
 
     # =========================================================================
-    # 2. PDKS HAREKETLERİNİN TOPLANMASI VE AKILLI ANALİZİ
+    # 2. STİL VE TEMA TANIMLARI (Modern Corporate / Premium Aesthetics)
     # =========================================================================
-    sh_pdks = None
-    for s_name in wb_pdks.sheet_names():
-        if "har" in s_name.lower() or "list" in s_name.lower():
-            sh_pdks = wb_pdks.sheet_by_name(s_name)
-            break
-    if not sh_pdks:
-        sh_pdks = wb_pdks.sheet_by_index(0)
-
-    pdks_records = []
-    emp_pdks_daily = {}
-    missing_punch_records = []
-    bonus_audit_records = []
-
-    tc_by_name = {norm_name_key(p["ad_soyad"]): p["tc"] for p in puantaj_rows}
-    cols = resolve_pdks_columns(sh_pdks)
-
-    def get_val(r_idx, col_key):
-        c_idx = cols.get(col_key)
-        if c_idx is not None and 0 <= c_idx < sh_pdks.ncols and c_idx < len(sh_pdks.row_values(r_idx)):
-            return clean_str(sh_pdks.cell_value(r_idx, c_idx))
-        return ""
-
-    # Günlük hareketleri topla (Tarih ve süre kontrolü ile)
-    raw_daily_rows = defaultdict(lambda: {"rows": [], "meta": {}})
-
-    def add_row_to_day(p_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, row_dict):
-        if not p_tarih:
-            return
-        parts = str(p_tarih).split(".")
-        try:
-            d = int(parts[0])
-            m = int(parts[1])
-            if m != 9:
-                return
-        except:
-            return
-            
-        name_k = norm_name_key(full_name)
-        k = (name_k, d)
-        if not raw_daily_rows[k]["meta"]:
-            raw_daily_rows[k]["meta"] = {
-                "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
-                "full_name": full_name, "lokasyon": lokasyon, "date_val": p_tarih
-            }
-        raw_daily_rows[k]["rows"].append(row_dict)
-
-    for r in range(1, sh_pdks.nrows):
-        ad_soyad_single = get_val(r, "ad_soyad")
-        if ad_soyad_single:
-            full_name = ad_soyad_single
-        else:
-            adi = get_val(r, "adi")
-            soyadi = get_val(r, "soyadi")
-            full_name = f"{adi} {soyadi}".strip()
-
-        if not full_name or full_name in ("BBBBBB", "DDDDD"):
-            continue
-        if re.match(r"^(.)\1+$", full_name.replace(" ", "")):
-            continue
-
-        name_k = norm_name_key(full_name)
-        sira = get_val(r, "sira") or str(r)
-        sicil = get_val(r, "sicil") or tc_by_name.get(name_k, "")
-        kart = get_val(r, "kart") or sicil
-        lokasyon = get_val(r, "lokasyon")
-        g_tarih = get_val(r, "g_tarih")
-        g_saat = get_val(r, "g_saat")
-        c_tarih = get_val(r, "c_tarih")
-        c_saat = get_val(r, "c_saat")
-        puantaj_tarih = get_val(r, "puantaj_tarih")
-
-        p_date = puantaj_tarih if puantaj_tarih else (g_tarih if g_tarih else c_tarih)
-        gun_adi = get_val(r, "gun_adi") or (get_day_name(p_date) if p_date else "")
-
-        # Tarih ve saatleri tam kontrol et (24+ saatlik hatalı turnike eşleşmelerini ayır)
-        if g_tarih and g_saat and c_tarih and c_saat:
-            dt_g = parse_d_hm(g_tarih, g_saat)
-            dt_c = parse_d_hm(c_tarih, c_saat)
-            
-            # Eğer turnike aradaki 24+ saatlik 2 farklı günü tek satırda birleştirdiyse:
-            if dt_g and dt_c and (dt_c - dt_g).total_seconds() > 18 * 3600:
-                # 1. Gün (g_tarih): Sadece Giriş basılmış, çıkış basılmamış
-                add_row_to_day(g_tarih, sira, sicil, kart, gun_adi, full_name, lokasyon, {
-                    "g_tarih": g_tarih, "g_saat": g_saat, "c_tarih": "", "c_saat": ""
-                })
-                # 2. Gün (c_tarih): Sadece Çıkış/Giriş basılmış
-                c_gun_adi = get_day_name(c_tarih) if c_tarih else gun_adi
-                add_row_to_day(c_tarih, sira, sicil, kart, c_gun_adi, full_name, lokasyon, {
-                    "g_tarih": c_tarih, "g_saat": c_saat, "c_tarih": "", "c_saat": ""
-                })
-                continue
-                
-        # Normal geçerli hareket
-        target_date = p_date if p_date else (g_tarih if g_tarih else c_tarih)
-        add_row_to_day(target_date, sira, sicil, kart, gun_adi, full_name, lokasyon, {
-            "g_tarih": g_tarih, "g_saat": g_saat, "c_tarih": c_tarih, "c_saat": c_saat
-        })
-
-    # PDKS'de kart basıp puantaj.xls'de henüz olmayan aktif personelleri listeye ekle
-    seen_names = {norm_name_key(p["ad_soyad"]) for p in puantaj_rows}
-    for (name_key, day_num), data in raw_daily_rows.items():
-        if name_key not in seen_names:
-            meta = data["meta"]
-            full_name = meta["full_name"]
-            sicil = meta["sicil"]
-            puantaj_rows.append({
-                "sno": len(puantaj_rows) + 1,
-                "tc": sicil,
-                "ad_soyad": full_name,
-                "cinsiyet": "",
-                "isletme_giris": "",
-                "sgk_giris": "",
-                "kidem": 0,
-                "sgk_cikis": "",
-                "sgk_durumu": "NORMAL",
-                "durumu": "MEVSİMLİK",
-                "bolum": emp_dept_map.get(name_key, "DİĞER"),
-                "ikamet": "",
-                "net_maas": 0.0,
-                "sirket": "FİDE KONSERVE",
-                "mesai_durumu": "ALIR"
-            })
-            seen_names.add(name_key)
-
-    # -------------------------------------------------------------------------
-    # Günlük hareketleri analiz et:
-    # - Doğru Giriş ve Çıkış saatlerini tespit et
-    # - Tek basımlarda Giriş/Çıkış sütunlarını ve notlarını kusursuz eşleştir
-    # -------------------------------------------------------------------------
-    for (name_key, day_num), data in raw_daily_rows.items():
-        rows = data["rows"]
-        meta = data["meta"]
-        full_name = meta["full_name"]
-        date_val = meta["date_val"]
-        gun_adi = meta["gun_adi"]
-        kart = meta["kart"]
-        sicil = meta["sicil"]
-        lokasyon = meta["lokasyon"]
-        dept_name = emp_dept_map.get(name_key, "").upper()
-        
-        # Bölüm ismini standartlaştır (Türkçe karakter duyarlı)
-        norm_dept = dept_name.replace("İ", "I").replace("Ü", "U").replace("Ş", "S").replace("Ğ", "G").replace("Ç", "C").replace("Ö", "O").strip()
-        is_balik_dk = ("BALIK DOLUM" in norm_dept) or ("BALIK KESIM" in norm_dept) or ("BALIK KES" in norm_dept)
-        is_uretim = (norm_dept == "URETIM") or ("URETIM ELEMANI" in norm_dept) or ("KONSERVE URETIM" in norm_dept)
-        
-        is_audit = False
-        is_bonus = False
-        bonus_hours = 0.0
-        status_type = None
-        note = ""
-        g_display = "-"
-        c_display = "-"
-        all_punches = []
-        
-        for r_item in rows:
-            if r_item["g_saat"]:
-                all_punches.append(r_item["g_saat"])
-            if r_item["c_saat"]:
-                all_punches.append(r_item["c_saat"])
-        all_punches_str = ", ".join(all_punches)
-        
-        # 1. DURUM: Tek satır var ve hem Giriş hem Çıkış saati dolu
-        if len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]:
-            g_raw = rows[0]["g_saat"]
-            c_raw = rows[0]["c_saat"]
-            g_display = g_raw[:5] if len(g_raw) >= 5 else g_raw
-            c_display = c_raw[:5] if len(c_raw) >= 5 else c_raw
-            sure, fazla = calc_factory_worked_hours(g_raw, c_raw)
-            mesai = min(7.5, sure)
-            fiili_sure = sure
-            
-        # 2. DURUM: Birden fazla satır var (Çoklu basım)
-        elif len(rows) > 1:
-            g_list = [r_item["g_saat"] for r_item in rows if r_item["g_saat"]]
-            c_list = [r_item["c_saat"] for r_item in rows if r_item["c_saat"]]
-            
-            if g_list and c_list:
-                g_raw = g_list[0]
-                c_raw = c_list[-1]
-                g_display = g_raw[:5] if len(g_raw) >= 5 else g_raw
-                c_display = c_raw[:5] if len(c_raw) >= 5 else c_raw
-                sure, fazla = calc_factory_worked_hours(g_raw, c_raw)
-                mesai = min(7.5, sure)
-                fiili_sure = sure
-                if len(all_punches) > 2:
-                    is_audit = True
-                    status_type = "Çoklu Basım (Min/Max)"
-                    note = f"{date_val} Çoklu Basım: Giriş {g_display}, Çıkış {c_display} ({fmt_hours_tr(sure)} saat)"
-            elif g_list:
-                # Sadece sabah/akşam giriş sütununda hareket var
-                g_raw = g_list[0]
-                is_audit = True
-                hm = parse_hm(g_raw)
-                tm = hm[0] * 60 + hm[1] if hm else 480
-                
-                if tm <= 12 * 60 + 30:
-                    g_display = g_raw[:5]
-                    c_display = "-"
-                    status_type = "Çıkış Basılmadı"
-                    sure, fazla, mesai = 7.5, 0.0, 7.5
-                    note = f"{date_val} Giriş: {g_display} | Çıkış Basılmadı (7,5 saat yazıldı)"
-                elif 12 * 60 + 30 < tm < 20 * 60:
-                    g_display = "-"
-                    c_display = g_raw[:5]
-                    sure, fazla = calc_factory_worked_hours("08:00", g_raw)
-                    mesai = min(7.5, sure)
-                    status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
-                    note = f"{date_val} Çıkış: {c_display} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
-                else:
-                    g_display = g_raw[:5]
-                    c_display = "-"
-                    status_type = "Gece Girişi (Çıkış Basılmadı)"
-                    sure, fazla, mesai = 7.5, 0.0, 7.5
-                    note = f"{date_val} Giriş: {g_display} | Gece Çıkış Basılmadı (7,5 saat yazıldı)"
-                fiili_sure = sure
-            else:
-                sure, fazla, mesai, fiili_sure = 0.0, 0.0, 0.0, 0.0
-                
-        # 3. DURUM: Tek bir basım var (Eksik Basım)
-        elif len(rows) == 1:
-            r_single = rows[0]
-            t_raw = r_single["g_saat"] if r_single["g_saat"] else r_single["c_saat"]
-            is_audit = True
-            hm = parse_hm(t_raw)
-            tm = hm[0] * 60 + hm[1] if hm else 480
-            t_s = t_raw[:5] if len(t_raw) >= 5 else t_raw
-            
-            # Sabah basımı (Giriş var, Çıkış yok)
-            if tm <= 12 * 60 + 30:
-                g_display = t_s
-                c_display = "-"
-                status_type = "Çıkış Basılmadı"
-                sure, fazla, mesai = 7.5, 0.0, 7.5
-                note = f"{date_val} Giriş: {t_s} | Çıkış Basılmadı (7,5 saat yazıldı)"
-            # Akşam basımı (Çıkış var, Giriş yok)
-            elif 12 * 60 + 30 < tm < 20 * 60:
-                g_display = "-"
-                c_display = t_s
-                sure, fazla = calc_factory_worked_hours("08:00", t_raw)
-                mesai = min(7.5, sure)
-                status_type = "Giriş Basılmadı (FM Korundu)" if fazla > 0 else "Giriş Basılmadı"
-                note = f"{date_val} Çıkış: {t_s} | Giriş Basılmadı ({fmt_hours_tr(sure)} saat yazıldı)"
-            # Gece vardiyası girişi (Giriş var, Çıkış yok)
-            else:
-                g_display = t_s
-                c_display = "-"
-                status_type = "Gece Girişi (Çıkış Basılmadı)"
-                sure, fazla, mesai = 7.5, 0.0, 7.5
-                note = f"{date_val} Giriş: {t_s} | Gece Çıkış Basılmadı (7,5 saat yazıldı)"
-            fiili_sure = sure
-        else:
-            sure, fazla, mesai, fiili_sure = 0.0, 0.0, 0.0, 0.0
-            
-        # ---------------------------------------------------------------------
-        # KESİN BÖLÜM PRİMİ KONTROLÜ (Sadece Balık Dolum/Kesim ve Üretim için):
-        # ---------------------------------------------------------------------
-        if is_balik_dk and fiili_sure >= 10.0:
-            bonus_hours = 2.0
-            sure += bonus_hours
-            fazla += bonus_hours
-            is_bonus = True
-            prim_aciklama = f"{dept_name} Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s (+2,0s Prim)"
-            note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
-            
-        elif is_uretim and fiili_sure >= 12.0:
-            bonus_hours = 4.0
-            sure += bonus_hours
-            fazla += bonus_hours
-            is_bonus = True
-            prim_aciklama = f"Üretim Primi: Fiili {fmt_hours_tr(fiili_sure)}s -> Bonuslu {fmt_hours_tr(sure)}s (+4,0s Prim)"
-            note = f"{note} | {prim_aciklama}" if note else f"{date_val} {prim_aciklama}"
-
-        # Personel günlük çalışma sözlüğüne kaydet
-        if name_key not in emp_pdks_daily:
-            emp_pdks_daily[name_key] = {}
-        emp_pdks_daily[name_key][day_num] = {
-            "sure": sure, "normal": mesai, "fazla": fazla,
-            "missing_type": status_type, "note": note,
-            "is_audit": is_audit, "is_bonus": is_bonus, "bonus_hours": bonus_hours
-        }
-        
-        # İnsan kontrolü gerektiren eksik/çoklu basımları rapora ekle
-        if is_audit and full_name:
-            missing_punch_records.append({
-                "sno": len(missing_punch_records) + 1,
-                "tarih": date_val,
-                "gun_adi": gun_adi,
-                "kart": kart,
-                "sicil": sicil,
-                "ad_soyad": full_name,
-                "lokasyon": lokasyon,
-                "g_saat": g_display,
-                "c_saat": c_display,
-                "tum_hareketler": all_punches_str,
-                "hata": status_type,
-                "yazilan_saat": sure,
-                "fazla_mesai": fazla,
-                "durum": "İK / Amir Onayında"
-            })
-            
-        # Özel Bölüm Primi alanları denetim raporuna ekle
-        if is_bonus and full_name:
-            bonus_audit_records.append({
-                "sno": len(bonus_audit_records) + 1,
-                "tarih": date_val,
-                "gun_adi": gun_adi,
-                "kart": kart,
-                "sicil": sicil,
-                "ad_soyad": full_name,
-                "bolum": dept_name,
-                "g_saat": g_display,
-                "c_saat": c_display,
-                "fiili_sure": fiili_sure,
-                "eklenen_prim": bonus_hours,
-                "yazilan_saat": sure,
-                "fazla_mesai": fazla,
-                "durum": "İK / Amir Onayında"
-            })
-            
-        pdks_records.append({
-            "sira": meta["sira"], "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
-            "ad_soyad": full_name, "lokasyon": lokasyon, "g_tarih": date_val,
-            "g_saat": g_display, "c_tarih": date_val, "c_saat": c_display,
-            "sure": round(sure, 1), "mesai": round(mesai, 1), "fazla": round(fazla, 1),
-            "puantaj_tarih": date_val
-        })
-
-    print(f"   -> PDKS'den {len(pdks_records)} günlük hareket ({len(missing_punch_records)} eksik basım, {len(bonus_audit_records)} bölüm primi) işlendi.")
-
-    # =========================================================================
-    # 3. RAPORLAR, İCRA, İZİN VE BORDRO VERİLERİNİN OKUNMASI
-    # =========================================================================
-    # SGK Raporları
-    sh_rap = get_sheet_by_keyword(wb_old, "rapor", 4)
-    rapor_list = []
-    rapor_by_tc = {}
-    if sh_rap and sh_rap.ncols >= 8:
-        for r in range(3, sh_rap.nrows):
-            takip_no = clean_str(sh_rap.cell_value(r, 1))
-            sira_no = clean_str(sh_rap.cell_value(r, 2))
-            tc = clean_tc(sh_rap.cell_value(r, 3))
-            ad_soyad = clean_str(sh_rap.cell_value(r, 4))
-            vaka = clean_str(sh_rap.cell_value(r, 5))
-            pol_tarih = xldate_to_str(sh_rap.cell_value(r, 6))
-            isbasi_tarih = xldate_to_str(sh_rap.cell_value(r, 7))
-            if ad_soyad:
-                rapor_list.append({
-                    "takip_no": takip_no, "sira_no": sira_no, "tc": tc, "ad_soyad": ad_soyad,
-                    "vaka": vaka, "pol_tarih": pol_tarih, "isbasi_tarih": isbasi_tarih
-                })
-                if tc:
-                    rapor_by_tc[tc] = rapor_by_tc.get(tc, 0) + 1
-
-    # İcra Takip
-    sh_icra = get_sheet_by_keyword(wb_old, "cra", 3)
-    icra_list = []
-    icra_by_name = {}
-    if sh_icra and sh_icra.ncols >= 8:
-        for r in range(2, sh_icra.nrows):
-            isim = clean_str(sh_icra.cell_value(r, 1))
-            sirket = clean_str(sh_icra.cell_value(r, 3))
-            dosya = clean_str(sh_icra.cell_value(r, 4))
-            kalan_borc = clean_money(sh_icra.cell_value(r, 5))
-            kesilen = clean_money(sh_icra.cell_value(r, 6))
-            iban = clean_str(sh_icra.cell_value(r, 7))
-            if isim:
-                icra_list.append({
-                    "isim": isim, "sirket": sirket, "dosya": dosya,
-                    "kalan_borc": kalan_borc, "kesilen": kesilen, "iban": iban
-                })
-                icra_by_name[norm_name_key(isim)] = {
-                    "kesilen": kesilen, "kalan_borc": kalan_borc, "dosya": dosya, "iban": iban
-                }
-
-    # Ücretli İzinler
-    sh_izin = get_sheet_by_keyword(wb_old, "zin", 7)
-    izin_list = []
-    izin_by_tc = {}
-    if sh_izin:
-        for r in range(1, sh_izin.nrows):
-            tc = clean_tc(sh_izin.cell_value(r, 0))
-            isim = clean_str(sh_izin.cell_value(r, 1))
-            saat = clean_money(sh_izin.cell_value(r, 2)) if sh_izin.ncols > 2 else 0.0
-            gun = clean_money(sh_izin.cell_value(r, 3)) if sh_izin.ncols > 3 else 0.0
-            if isim:
-                izin_list.append({"tc": tc, "isim": isim, "saat": saat, "gun": gun})
-                if tc:
-                    izin_by_tc[tc] = {"saat": saat, "gun": gun}
-
-    # Resmi Bordro SGK
-    sh_bordro = get_sheet_by_keyword(wb_old, "sayfa4", 8)
-    bordro_list = []
-    bordro_by_tc = {}
-    if sh_bordro and sh_bordro.ncols >= 10:
-        for r in range(1, sh_bordro.nrows):
-            sno = clean_str(sh_bordro.cell_value(r, 0))
-            tc = clean_tc(sh_bordro.cell_value(r, 1))
-            ad_soyad = clean_str(sh_bordro.cell_value(r, 2))
-            ucret = clean_money(sh_bordro.cell_value(r, 3))
-            giris = xldate_to_str(sh_bordro.cell_value(r, 4))
-            cikis = xldate_to_str(sh_bordro.cell_value(r, 5))
-            normal_kazanc = clean_money(sh_bordro.cell_value(r, 6))
-            ek_kazanc = clean_money(sh_bordro.cell_value(r, 7))
-            yasal_kesinti = clean_money(sh_bordro.cell_value(r, 8))
-            toplam_kazanc = clean_money(sh_bordro.cell_value(r, 10)) if sh_bordro.ncols > 10 else 0.0
-            toplam_kesinti = clean_money(sh_bordro.cell_value(r, 11)) if sh_bordro.ncols > 11 else 0.0
-            odenecek_net = clean_money(sh_bordro.cell_value(r, 12)) if sh_bordro.ncols > 12 else 0.0
-            sgk_gun = clean_money(sh_bordro.cell_value(r, 13)) if sh_bordro.ncols > 13 else 0.0
-            sgk_brut = clean_money(sh_bordro.cell_value(r, 14)) if sh_bordro.ncols > 14 else 0.0
-            kanun = clean_str(sh_bordro.cell_value(r, 30)) if sh_bordro.ncols > 30 else ""
-            meslek_kodu = clean_str(sh_bordro.cell_value(r, 33)) if sh_bordro.ncols > 33 else ""
-            
-            if ad_soyad:
-                row_dict = {
-                    "sno": sno, "tc": tc, "ad_soyad": ad_soyad, "ucret": ucret,
-                    "giris": giris, "cikis": cikis, "normal_kazanc": normal_kazanc,
-                    "ek_kazanc": ek_kazanc, "yasal_kesinti": yasal_kesinti,
-                    "toplam_kazanc": toplam_kazanc, "toplam_kesinti": toplam_kesinti,
-                    "odenecek_net": odenecek_net, "sgk_gun": sgk_gun, "sgk_brut": sgk_brut,
-                    "kanun": kanun, "meslek_kodu": meslek_kodu
-                }
-                bordro_list.append(row_dict)
-                if tc:
-                    bordro_by_tc[tc] = row_dict
-
-    # Daimi Personel Listesi
-    sh_daimi = get_sheet_by_keyword(wb_old, "daim", 1)
-    daimi_list = []
-    if sh_daimi:
-        for r in range(1, sh_daimi.nrows):
-            sno = clean_str(sh_daimi.cell_value(r, 0))
-            tc = clean_tc(sh_daimi.cell_value(r, 1))
-            ad_soyad = clean_str(sh_daimi.cell_value(r, 2))
-            sgk_giris = xldate_to_str(sh_daimi.cell_value(r, 3)) if sh_daimi.ncols > 3 else ""
-            sgk_durum = clean_str(sh_daimi.cell_value(r, 4)) if sh_daimi.ncols > 4 else ""
-            durum = clean_str(sh_daimi.cell_value(r, 5)) if sh_daimi.ncols > 5 else ""
-            maas = clean_money(sh_daimi.cell_value(r, 6)) if sh_daimi.ncols > 6 else 0.0
-            if ad_soyad:
-                daimi_list.append({
-                    "sno": sno, "tc": tc, "ad_soyad": ad_soyad,
-                    "sgk_giris": sgk_giris, "sgk_durum": sgk_durum,
-                    "durum": durum, "maas": maas
-                })
-
-    # =========================================================================
-    # 4. MODERN VE CANLI FORMÜLLÜ EXCEL (.xlsx) OLUŞTURMA
-    # =========================================================================
-    print("3. Modern 'puantaj.xlsx' çalışma kitabı oluşturuluyor...")
+    print(f"2. Modern '{output_filename}' çalışma kitabı oluşturuluyor...")
     wb_new = openpyxl.Workbook()
     wb_new.remove(wb_new.active)
 
@@ -1101,14 +104,17 @@ def main():
     border_header = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thick_bottom)
     border_total = Border(top=thin_border_side, bottom=Side(border_style="double", color="000000"))
 
+    tr_months = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    month_name = tr_months[engine.target_month].upper() if 1 <= engine.target_month <= 12 else ""
+
     # =========================================================================
-    # SAYFA 1: Aylik_Puantaj (Eylül 2026 Cetveli)
+    # SAYFA 1: Aylik_Puantaj (Dinamik Ay ve Canlı Formüller)
     # =========================================================================
     ws_p = wb_new.create_sheet(title="Aylik_Puantaj")
     ws_p.views.sheetView[0].showGridLines = True
 
     ws_p.merge_cells("A1:N1")
-    ws_p["A1"] = "FİDE KONSERVE GIDA SAN. VE TİC. A.Ş. - EYLÜL 2026 AYLIK PUANTAJ VE HAKEDİŞ CETVELİ"
+    ws_p["A1"] = f"FİDE KONSERVE GIDA SAN. VE TİC. A.Ş. - {month_name} {engine.target_year} AYLIK PUANTAJ VE HAKEDİŞ CETVELİ"
     ws_p["A1"].font = font_title
     ws_p["A1"].alignment = Alignment(horizontal="left", vertical="center")
 
@@ -1129,15 +135,13 @@ def main():
         ("N", "Mesai Durumu", 11),
     ]
 
-    day_names_tr = ["Salı", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "PAZAR", "Pzt", "Sal", "Çar"]
-
     day_cols = []
     start_col_idx = 15
-    for d in range(1, 31):
+    for d in range(1, engine.days_in_month + 1):
         col_letter = get_column_letter(start_col_idx + d - 1)
-        day_name = day_names_tr[d-1]
-        is_pazar = (day_name == "PAZAR")
-        day_cols.append((col_letter, f"{d:02d}.09\n{day_name}", 6, is_pazar, d))
+        day_name = engine.get_day_name_for_day(d, short=True)
+        is_pazar = engine.is_sunday(d)
+        day_cols.append((col_letter, f"{d:02d}.{engine.target_month:02d}\n{day_name}", 6, is_pazar, d))
 
     calc_headers = [
         ("Toplam Çalışma Saati", 13, fill_overtime),
@@ -1150,9 +154,14 @@ def main():
         ("Eksik Gün Nedeni", 15, fill_navy),
         ("Hafta İçi Fazla Mesai (Saat)", 13, fill_overtime),
         ("Pazar Mesai (Saat)", 13, fill_pazar),
+        ("Maaş Hakedişi (TL)", 14, fill_navy),
+        ("H.İçi Mesai Tutarı (TL)", 15, fill_overtime),
+        ("Pazar Mesai Tutarı (TL)", 15, fill_pazar),
+        ("Toplam Mesai Tutarı (TL)", 16, fill_overtime),
+        ("Toplam Net Hakediş (TL)", 16, fill_net),
         ("Resmi Bordro SGK Net (TL)", 15, fill_navy),
-        ("Elden Ödenecek Fark (TL)", 15, fill_net),
         ("İcra Kesintisi (TL)", 13, fill_deduct),
+        ("Elden Ödenecek Fark (TL)", 15, fill_net),
         ("Ödenecek Net Tutar (TL)", 15, fill_net),
     ]
 
@@ -1178,7 +187,7 @@ def main():
         cell.border = border_header
         ws_p.column_dimensions[col_let].width = width
 
-    cur_col_idx = start_col_idx + 30
+    cur_col_idx = start_col_idx + engine.days_in_month
     calc_col_letters = []
     for text, width, hfill in calc_headers:
         col_let = get_column_letter(cur_col_idx)
@@ -1206,17 +215,17 @@ def main():
         ws_p[f"A{r_idx}"] = emp["sno"]
         ws_p[f"B{r_idx}"] = emp["tc"]
         ws_p[f"C{r_idx}"] = emp["ad_soyad"]
-        ws_p[f"D{r_idx}"] = emp["cinsiyet"]
-        ws_p[f"E{r_idx}"] = emp["isletme_giris"]
-        ws_p[f"F{r_idx}"] = emp["sgk_giris"]
-        ws_p[f"G{r_idx}"] = emp["sgk_cikis"]
-        ws_p[f"H{r_idx}"] = emp["sgk_durumu"]
-        ws_p[f"I{r_idx}"] = emp["durumu"]
-        ws_p[f"J{r_idx}"] = emp["bolum"]
-        ws_p[f"K{r_idx}"] = emp["ikamet"]
-        ws_p[f"L{r_idx}"] = emp["net_maas"]
-        ws_p[f"M{r_idx}"] = emp["sirket"]
-        ws_p[f"N{r_idx}"] = emp["mesai_durumu"]
+        ws_p[f"D{r_idx}"] = emp.get("cinsiyet", "")
+        ws_p[f"E{r_idx}"] = emp.get("isletme_giris", "")
+        ws_p[f"F{r_idx}"] = emp.get("sgk_giris", "")
+        ws_p[f"G{r_idx}"] = emp.get("sgk_cikis", "")
+        ws_p[f"H{r_idx}"] = emp.get("sgk_durumu", "NORMAL")
+        ws_p[f"I{r_idx}"] = emp.get("durumu", "MEVSİMLİK")
+        ws_p[f"J{r_idx}"] = emp.get("bolum", "")
+        ws_p[f"K{r_idx}"] = emp.get("ikamet", "")
+        ws_p[f"L{r_idx}"] = emp.get("net_maas", 0.0)
+        ws_p[f"M{r_idx}"] = emp.get("sirket", "FİDE KONSERVE")
+        ws_p[f"N{r_idx}"] = emp.get("mesai_durumu", "ALIR")
         
         ws_p[f"A{r_idx}"].alignment = align_center
         ws_p[f"B{r_idx}"].alignment = align_center
@@ -1235,9 +244,7 @@ def main():
         ws_p[f"M{r_idx}"].alignment = align_center
         ws_p[f"N{r_idx}"].alignment = align_center
         
-        norm_name = norm_name_key(emp["ad_soyad"])
-        emp_pdks = emp_pdks_daily.get(norm_name, {})
-        
+        name_k = emp["name_key"]
         emp_ot_weekday = 0.0
         emp_ot_sunday = 0.0
         
@@ -1250,26 +257,23 @@ def main():
             elif row_fill:
                 cell.fill = row_fill
                 
-            if d in emp_pdks:
-                day_info = emp_pdks[d]
-                hours = day_info["sure"]
-                fazla = day_info["fazla"]
-                cell.value = hours if hours > 0 else 0
+            rec = emp_pdks_daily.get((name_k, d))
+            if rec and rec["final_hours"] > 0:
+                hours = rec["final_hours"]
+                fazla = rec["overtime_hours"]
+                cell.value = hours
                 
                 # Görsel Renklendirme ve Hücre Notları
                 if not is_pazar:
-                    if day_info.get("is_bonus"): # Bölüm Primi Alan Günler (Açık Mor/Lila)
+                    if rec.get("is_bonus"): # Bölüm Primi Alan Günler (Açık Mor/Lila)
                         cell.fill = fill_bonus
-                        if day_info.get("note"):
-                            cell.comment = Comment(day_info["note"], "PDKS Sistemi")
-                    elif day_info.get("is_audit"): # Eksik / Hatalı Basımlar (Turuncu)
+                        if rec.get("audit_note"):
+                            cell.comment = Comment(rec["audit_note"], "PDKS Sistemi")
+                    elif rec.get("is_exception"): # Eksik / Hatalı Basımlar (Turuncu)
                         cell.fill = fill_missing
-                        if day_info.get("note"):
-                            cell.comment = Comment(day_info["note"], "PDKS Sistemi")
+                        if rec.get("audit_note"):
+                            cell.comment = Comment(rec["audit_note"], "PDKS Sistemi")
                             
-                    if cell.value == 0 or cell.value == 0.0:
-                        cell.value = 7.5
-                        
                 if is_pazar:
                     emp_ot_sunday += hours
                 else:
@@ -1287,34 +291,47 @@ def main():
         c_eksik_neden = calc_col_letters[7][0]
         c_ot_weekday = calc_col_letters[8][0]
         c_ot_pazar = calc_col_letters[9][0]
-        c_bordro_net = calc_col_letters[10][0]
-        c_elden_fark = calc_col_letters[11][0]
-        c_icra_kes = calc_col_letters[12][0]
-        c_net_odenecek = calc_col_letters[13][0]
+        c_maas_tl = calc_col_letters[10][0]
+        c_ot_hi_tl = calc_col_letters[11][0]
+        c_ot_hs_tl = calc_col_letters[12][0]
+        c_ot_tot_tl = calc_col_letters[13][0]
+        c_hakedis_tl = calc_col_letters[14][0]
+        c_bordro_net = calc_col_letters[15][0]
+        c_icra_kes = calc_col_letters[16][0]
+        c_elden_fark = calc_col_letters[17][0]
+        c_net_odenecek = calc_col_letters[18][0]
         
-        # Canlı Excel Formülleri
+        # Dinamik Canlı Excel Formülleri
+        sundays_count = len(engine.sundays)
         ws_p[f"{c_tot_hours}{r_idx}"] = f"=SUM({first_day_col}{r_idx}:{last_day_col}{r_idx})"
         ws_p[f"{c_work_days}{r_idx}"] = f'=COUNTIF({first_day_col}{r_idx}:{last_day_col}{r_idx}, ">0")'
-        ws_p[f"{c_ht_days}{r_idx}"] = f"=IF({c_work_days}{r_idx}>=5, 4, IF({c_work_days}{r_idx}>0, INT({c_work_days}{r_idx}/6), 0))"
+        ws_p[f"{c_ht_days}{r_idx}"] = f"=IF({c_work_days}{r_idx}>=5, {sundays_count}, IF({c_work_days}{r_idx}>0, INT({c_work_days}{r_idx}/6), 0))"
         
         tc_val = emp["tc"]
-        izin_val = izin_by_tc.get(tc_val, {}).get("gun", 0) if tc_val else 0
-        rap_val = rapor_by_tc.get(tc_val, 0) if tc_val else 0
+        izin_val = engine.izin_by_tc.get(tc_val, {}).get("gun", 0) if tc_val else 0
+        rap_val = engine.rapor_by_tc.get(tc_val, 0) if tc_val else 0
         
         ws_p[f"{c_izin_days}{r_idx}"] = izin_val
         ws_p[f"{c_rap_days}{r_idx}"] = rap_val
         
-        ws_p[f"{c_sgk_days}{r_idx}"] = f"=MIN(30, {c_work_days}{r_idx}+{c_ht_days}{r_idx}+{c_izin_days}{r_idx}+{c_rap_days}{r_idx})"
-        ws_p[f"{c_eksik_days}{r_idx}"] = f"=30-{c_sgk_days}{r_idx}"
+        ws_p[f"{c_sgk_days}{r_idx}"] = f"=MIN({engine.days_in_month}, {c_work_days}{r_idx}+{c_ht_days}{r_idx}+{c_izin_days}{r_idx}+{c_rap_days}{r_idx})"
+        ws_p[f"{c_eksik_days}{r_idx}"] = f"={engine.days_in_month}-{c_sgk_days}{r_idx}"
         ws_p[f"{c_eksik_neden}{r_idx}"] = f'=IF({c_rap_days}{r_idx}>0, "01-İstirahat", IF({c_eksik_days}{r_idx}>0, "12-Birden Fazla", ""))'
         
         ws_p[f"{c_ot_weekday}{r_idx}"] = emp_ot_weekday
         ws_p[f"{c_ot_pazar}{r_idx}"] = emp_ot_sunday
         
+        # Finansal Ücret ve Fazla Mesai Formülleri (Pazar ve Hafta İçi 1.5x katsayılı)
+        ws_p[f"{c_maas_tl}{r_idx}"] = f"=(L{r_idx}/30)*{c_work_days}{r_idx}"
+        ws_p[f"{c_ot_hi_tl}{r_idx}"] = f"=(L{r_idx}/225)*1.5*{c_ot_weekday}{r_idx}"
+        ws_p[f"{c_ot_hs_tl}{r_idx}"] = f"=(L{r_idx}/225)*1.5*{c_ot_pazar}{r_idx}"
+        ws_p[f"{c_ot_tot_tl}{r_idx}"] = f"={c_ot_hi_tl}{r_idx}+{c_ot_hs_tl}{r_idx}"
+        ws_p[f"{c_hakedis_tl}{r_idx}"] = f"={c_maas_tl}{r_idx}+{c_ot_tot_tl}{r_idx}"
+        
         ws_p[f"{c_bordro_net}{r_idx}"] = f'=IFERROR(VLOOKUP(B{r_idx}, Resmi_Bordro_SGK!B:M, 11, FALSE), 0)'
-        ws_p[f"{c_elden_fark}{r_idx}"] = f'=IF(L{r_idx}>{c_bordro_net}{r_idx}, L{r_idx}-{c_bordro_net}{r_idx}, 0)'
         ws_p[f"{c_icra_kes}{r_idx}"] = f'=IFERROR(VLOOKUP(B{r_idx}, Icra_Takip!A:E, 4, FALSE), 0)'
-        ws_p[f"{c_net_odenecek}{r_idx}"] = f'=L{r_idx}-{c_icra_kes}{r_idx}'
+        ws_p[f"{c_elden_fark}{r_idx}"] = f'=IF({c_hakedis_tl}{r_idx}>{c_bordro_net}{r_idx}, {c_hakedis_tl}{r_idx}-{c_bordro_net}{r_idx}-{c_icra_kes}{r_idx}, 0)'
+        ws_p[f"{c_net_odenecek}{r_idx}"] = f'={c_hakedis_tl}{r_idx}-{c_icra_kes}{r_idx}'
         
         for col_info in [
             (c_tot_hours, "0.0", align_center, fill_overtime),
@@ -1327,9 +344,14 @@ def main():
             (c_eksik_neden, "@", align_center, None),
             (c_ot_weekday, "0.0", align_center, fill_overtime),
             (c_ot_pazar, "0.0", align_center, fill_pazar),
+            (c_maas_tl, "#,##0.00", align_right, None),
+            (c_ot_hi_tl, "#,##0.00", align_right, fill_overtime),
+            (c_ot_hs_tl, "#,##0.00", align_right, fill_pazar),
+            (c_ot_tot_tl, "#,##0.00", align_right, fill_overtime),
+            (c_hakedis_tl, "#,##0.00", align_right, fill_net),
             (c_bordro_net, "#,##0.00", align_right, None),
-            (c_elden_fark, "#,##0.00", align_right, fill_net),
             (c_icra_kes, "#,##0.00", align_right, fill_deduct),
+            (c_elden_fark, "#,##0.00", align_right, fill_net),
             (c_net_odenecek, "#,##0.00", align_right, fill_net),
         ]:
             cl, fmt, algn, fill_bg = col_info
@@ -1366,7 +388,7 @@ def main():
         ws_p[f"{cl}{tot_r_puantaj}"] = f"=SUM({cl}4:{cl}{tot_r_puantaj-1})"
         ws_p[f"{cl}{tot_r_puantaj}"].number_format = "0.0" if cl in (c_tot_hours, c_ot_weekday, c_ot_pazar) else "0"
 
-    for cl in [c_bordro_net, c_elden_fark, c_icra_kes, c_net_odenecek]:
+    for cl in [c_maas_tl, c_ot_hi_tl, c_ot_hs_tl, c_ot_tot_tl, c_hakedis_tl, c_bordro_net, c_icra_kes, c_elden_fark, c_net_odenecek]:
         ws_p[f"{cl}{tot_r_puantaj}"] = f"=SUM({cl}4:{cl}{tot_r_puantaj-1})"
         ws_p[f"{cl}{tot_r_puantaj}"].number_format = "#,##0.00"
 
@@ -1405,21 +427,21 @@ def main():
         cell.border = border_header
         ws_miss.column_dimensions[col_let].width = w
 
-    for r_idx, mp in enumerate(missing_punch_records, start=2):
+    for r_idx, mp in enumerate(engine.exception_records, start=2):
         ws_miss[f"A{r_idx}"] = mp["sno"]
         ws_miss[f"B{r_idx}"] = mp["tarih"]
         ws_miss[f"C{r_idx}"] = mp["gun_adi"]
         ws_miss[f"D{r_idx}"] = mp["kart"]
         ws_miss[f"E{r_idx}"] = mp["sicil"]
         ws_miss[f"F{r_idx}"] = mp["ad_soyad"]
-        ws_miss[f"G{r_idx}"] = mp["lokasyon"]
-        ws_miss[f"H{r_idx}"] = mp["g_saat"]
-        ws_miss[f"I{r_idx}"] = mp["c_saat"]
-        ws_miss[f"J{r_idx}"] = mp["tum_hareketler"]
-        ws_miss[f"K{r_idx}"] = mp["hata"]
-        ws_miss[f"L{r_idx}"] = mp["yazilan_saat"]
-        ws_miss[f"M{r_idx}"] = mp["fazla_mesai"]
-        ws_miss[f"N{r_idx}"] = mp["durum"]
+        ws_miss[f"G{r_idx}"] = mp["bolum"] or mp["lokasyon"]
+        ws_miss[f"H{r_idx}"] = mp["raw_g_saat"]
+        ws_miss[f"I{r_idx}"] = mp["raw_c_saat"]
+        ws_miss[f"J{r_idx}"] = mp["all_punches"]
+        ws_miss[f"K{r_idx}"] = mp["status_type"]
+        ws_miss[f"L{r_idx}"] = mp["final_hours"]
+        ws_miss[f"M{r_idx}"] = mp["overtime_hours"]
+        ws_miss[f"N{r_idx}"] = "İK / Amir Onayında"
         
         for c_idx in range(1, 15):
             cl = get_column_letter(c_idx)
@@ -1457,7 +479,7 @@ def main():
         cell.border = border_header
         ws_bon.column_dimensions[col_let].width = w
 
-    for r_idx, br in enumerate(bonus_audit_records, start=2):
+    for r_idx, br in enumerate(engine.bonus_records, start=2):
         ws_bon[f"A{r_idx}"] = br["sno"]
         ws_bon[f"B{r_idx}"] = br["tarih"]
         ws_bon[f"C{r_idx}"] = br["gun_adi"]
@@ -1465,13 +487,13 @@ def main():
         ws_bon[f"E{r_idx}"] = br["sicil"]
         ws_bon[f"F{r_idx}"] = br["ad_soyad"]
         ws_bon[f"G{r_idx}"] = br["bolum"]
-        ws_bon[f"H{r_idx}"] = br["g_saat"]
-        ws_bon[f"I{r_idx}"] = br["c_saat"]
+        ws_bon[f"H{r_idx}"] = br["raw_g_saat"]
+        ws_bon[f"I{r_idx}"] = br["raw_c_saat"]
         ws_bon[f"J{r_idx}"] = br["fiili_sure"]
-        ws_bon[f"K{r_idx}"] = br["eklenen_prim"]
-        ws_bon[f"L{r_idx}"] = br["yazilan_saat"]
-        ws_bon[f"M{r_idx}"] = br["fazla_mesai"]
-        ws_bon[f"N{r_idx}"] = br["durum"]
+        ws_bon[f"K{r_idx}"] = br["bonus_hours"]
+        ws_bon[f"L{r_idx}"] = br["final_hours"]
+        ws_bon[f"M{r_idx}"] = br["overtime_hours"]
+        ws_bon[f"N{r_idx}"] = "İK / Amir Onayında"
         
         for c_idx in range(1, 15):
             cl = get_column_letter(c_idx)
@@ -1480,7 +502,7 @@ def main():
             if c_idx in (10, 11, 12, 13):
                 ws_bon[f"{cl}{r_idx}"].number_format = "0.0"
                 ws_bon[f"{cl}{r_idx}"].alignment = align_center
-            if c_idx == 11: # Eklenen prim sütunu
+            if c_idx == 11:
                 ws_bon[f"{cl}{r_idx}"].fill = fill_bonus
                 ws_bon[f"{cl}{r_idx}"].font = Font(name=FONT_FAMILY, size=9, bold=True, color="7030A0")
             if c_idx not in (6, 7):
@@ -1509,19 +531,19 @@ def main():
         cell.border = border_header
         ws_pdk.column_dimensions[col_let].width = w
 
-    for r_idx, rec in enumerate(pdks_records, start=2):
-        ws_pdk[f"A{r_idx}"] = rec["sira"]
+    for r_idx, rec in enumerate(engine.audit_records, start=2):
+        ws_pdk[f"A{r_idx}"] = rec["sno"]
         ws_pdk[f"B{r_idx}"] = rec["sicil"]
         ws_pdk[f"C{r_idx}"] = rec["kart"]
         ws_pdk[f"D{r_idx}"] = rec["ad_soyad"]
         ws_pdk[f"E{r_idx}"] = rec["gun_adi"]
-        ws_pdk[f"F{r_idx}"] = rec["g_tarih"]
-        ws_pdk[f"G{r_idx}"] = rec["g_saat"]
-        ws_pdk[f"H{r_idx}"] = rec["c_tarih"]
-        ws_pdk[f"I{r_idx}"] = rec["c_saat"]
-        ws_pdk[f"J{r_idx}"] = rec["sure"]
-        ws_pdk[f"K{r_idx}"] = rec["mesai"]
-        ws_pdk[f"L{r_idx}"] = rec["fazla"]
+        ws_pdk[f"F{r_idx}"] = rec["tarih"]
+        ws_pdk[f"G{r_idx}"] = rec["raw_g_saat"]
+        ws_pdk[f"H{r_idx}"] = rec["tarih"]
+        ws_pdk[f"I{r_idx}"] = rec["raw_c_saat"]
+        ws_pdk[f"J{r_idx}"] = rec["final_hours"]
+        ws_pdk[f"K{r_idx}"] = rec["base_hours"]
+        ws_pdk[f"L{r_idx}"] = rec["overtime_hours"]
         ws_pdk[f"J{r_idx}"].number_format = "0.0"
         ws_pdk[f"K{r_idx}"].number_format = "0.0"
         ws_pdk[f"L{r_idx}"].number_format = "0.0"
@@ -1557,7 +579,7 @@ def main():
         cell.border = border_header
         ws_bor.column_dimensions[col_let].width = w
 
-    for r_idx, b in enumerate(bordro_list, start=2):
+    for r_idx, b in enumerate(engine.bordro_list, start=2):
         ws_bor[f"A{r_idx}"] = b["sno"]
         ws_bor[f"B{r_idx}"] = b["tc"]
         ws_bor[f"B{r_idx}"].number_format = "@"
@@ -1607,11 +629,11 @@ def main():
         cell.border = border_header
         ws_icra.column_dimensions[col_let].width = w
 
-    for r_idx, ic in enumerate(icra_list, start=2):
+    for r_idx, ic in enumerate(engine.icra_list, start=2):
         tc_found = ""
         norm_ic_name = norm_name_key(ic["isim"])
         for p in puantaj_rows:
-            if norm_name_key(p["ad_soyad"]) == norm_ic_name:
+            if p["name_key"] == norm_ic_name:
                 tc_found = p["tc"]
                 break
                 
@@ -1656,7 +678,7 @@ def main():
         cell.border = border_header
         ws_rap.column_dimensions[col_let].width = w
 
-    for r_idx, rp in enumerate(rapor_list, start=2):
+    for r_idx, rp in enumerate(engine.rapor_list, start=2):
         ws_rap[f"A{r_idx}"] = rp["takip_no"]
         ws_rap[f"B{r_idx}"] = rp["sira_no"]
         ws_rap[f"C{r_idx}"] = rp["tc"]
@@ -1678,25 +700,82 @@ def main():
     # =========================================================================
     ws_izn = wb_new.create_sheet(title="Ucretli_Izinler")
     ws_izn.views.sheetView[0].showGridLines = True
-    for c_idx, h_text in enumerate(["TC Kimlik No", "Adı Soyadı", "İzin Saati", "İzin Günü"], start=1):
-        ws_izn.cell(1, c_idx, h_text).font = font_hdr
-        ws_izn.cell(1, c_idx).fill = fill_navy
+    izn_headers = [("TC Kimlik No", 14), ("Adı Soyadı", 22), ("İzin Saati", 14), ("İzin Günü", 14)]
+    ws_izn.row_dimensions[1].height = 25
+    for c_idx, (h_text, w) in enumerate(izn_headers, start=1):
+        col_let = get_column_letter(c_idx)
+        cell = ws_izn[f"{col_let}1"]
+        cell.value = h_text
+        cell.font = font_hdr
+        cell.fill = fill_navy
+        cell.alignment = align_hdr
+        cell.border = border_header
+        ws_izn.column_dimensions[col_let].width = w
+
+    for r_idx, iz in enumerate(engine.izin_list, start=2):
+        ws_izn[f"A{r_idx}"] = iz["tc"]
+        ws_izn[f"A{r_idx}"].number_format = "@"
+        ws_izn[f"B{r_idx}"] = iz["isim"]
+        ws_izn[f"C{r_idx}"] = iz["saat"]
+        ws_izn[f"D{r_idx}"] = iz["gun"]
+        for c_idx in range(1, 5):
+            cl = get_column_letter(c_idx)
+            ws_izn[f"{cl}{r_idx}"].border = border_cell
+            ws_izn[f"{cl}{r_idx}"].font = font_data
+            if c_idx in (3, 4):
+                ws_izn[f"{cl}{r_idx}"].alignment = align_right
+                ws_izn[f"{cl}{r_idx}"].number_format = "#,##0.0"
+            elif c_idx != 2:
+                ws_izn[f"{cl}{r_idx}"].alignment = align_center
 
     # =========================================================================
     # SAYFA 9: Daimi_Personel_Listesi (Kadro Durumu)
     # =========================================================================
     ws_dai = wb_new.create_sheet(title="Daimi_Personel_Listesi")
     ws_dai.views.sheetView[0].showGridLines = True
-    for c_idx, h_text in enumerate(["Sıra No", "TC Kimlik No", "Adı Soyadı", "SGK Giriş", "SGK Durum", "Kadro", "Maaş (TL)"], start=1):
-        ws_dai.cell(1, c_idx, h_text).font = font_hdr
-        ws_dai.cell(1, c_idx).fill = fill_navy
+    dai_headers = [
+        ("Sıra No", 8), ("TC Kimlik No", 14), ("Adı Soyadı", 22),
+        ("SGK Giriş", 12), ("SGK Durum", 14), ("Kadro", 14), ("Maaş (TL)", 15)
+    ]
+    ws_dai.row_dimensions[1].height = 25
+    for c_idx, (h_text, w) in enumerate(dai_headers, start=1):
+        col_let = get_column_letter(c_idx)
+        cell = ws_dai[f"{col_let}1"]
+        cell.value = h_text
+        cell.font = font_hdr
+        cell.fill = fill_navy
+        cell.alignment = align_hdr
+        cell.border = border_header
+        ws_dai.column_dimensions[col_let].width = w
+
+    for r_idx, da in enumerate(engine.daimi_list, start=2):
+        ws_dai[f"A{r_idx}"] = da["sno"]
+        ws_dai[f"B{r_idx}"] = da["tc"]
+        ws_dai[f"B{r_idx}"].number_format = "@"
+        ws_dai[f"C{r_idx}"] = da["ad_soyad"]
+        ws_dai[f"D{r_idx}"] = da["sgk_giris"]
+        ws_dai[f"E{r_idx}"] = da["sgk_durum"]
+        ws_dai[f"F{r_idx}"] = da["durum"]
+        ws_dai[f"G{r_idx}"] = da["maas"]
+        for c_idx in range(1, 8):
+            cl = get_column_letter(c_idx)
+            ws_dai[f"{cl}{r_idx}"].border = border_cell
+            ws_dai[f"{cl}{r_idx}"].font = font_data
+            if c_idx == 7:
+                ws_dai[f"{cl}{r_idx}"].alignment = align_right
+                ws_dai[f"{cl}{r_idx}"].number_format = "#,##0.00"
+            elif c_idx != 3:
+                ws_dai[f"{cl}{r_idx}"].alignment = align_center
 
     # =========================================================================
     # SAYFA 10: Elden_Odeme_Farki (Net Maaş ile Resmi Bordro Fark Cetveli)
     # =========================================================================
     ws_eld = wb_new.create_sheet(title="Elden_Odeme_Farki")
     ws_eld.views.sheetView[0].showGridLines = True
-    eld_headers = [("Sıra No", 8), ("TC Kimlik No", 14), ("Adı Soyadı", 22), ("Anlaşılan Maaş", 15), ("Resmi Bordro Net", 15), ("Elden Fark (TL)", 15)]
+    eld_headers = [
+        ("Sıra No", 8), ("TC Kimlik No", 14), ("Adı Soyadı", 22),
+        ("Anlaşılan Maaş", 15), ("Resmi Bordro Net", 15), ("Elden Fark (TL)", 15)
+    ]
     ws_eld.row_dimensions[1].height = 25
     for c_idx, (h_text, w) in enumerate(eld_headers, start=1):
         col_let = get_column_letter(c_idx)
@@ -1715,8 +794,8 @@ def main():
         ws_eld[f"B{r_idx}"].number_format = "@"
         ws_eld[f"C{r_idx}"] = p["ad_soyad"]
         ws_eld[f"D{r_idx}"] = f"=Aylik_Puantaj!L{p_row}"
-        ws_eld[f"E{r_idx}"] = f"=Aylik_Puantaj!BC{p_row}"
-        ws_eld[f"F{r_idx}"] = f"=Aylik_Puantaj!BD{p_row}"
+        ws_eld[f"E{r_idx}"] = f"=Aylik_Puantaj!{c_bordro_net}{p_row}"
+        ws_eld[f"F{r_idx}"] = f"=Aylik_Puantaj!{c_elden_fark}{p_row}"
         
         for c_idx in range(1, 7):
             cl = get_column_letter(c_idx)
@@ -1725,31 +804,38 @@ def main():
             if c_idx in (4, 5, 6):
                 ws_eld[f"{cl}{r_idx}"].number_format = "#,##0.00"
                 ws_eld[f"{cl}{r_idx}"].alignment = align_right
-            elif c_idx not in (3,):
+            elif c_idx != 3:
                 ws_eld[f"{cl}{r_idx}"].alignment = align_center
 
     # =========================================================================
-    # 5. DOSYA KAYDETME VE GÜVENLİK
+    # 3. DOSYAYI KAYDETME
     # =========================================================================
-    output_filename = "puantaj.xlsx"
     saved_name = output_filename
     try:
         wb_new.save(output_filename)
-        print(f"4. Dosya '{output_filename}' olarak kaydedildi.")
+        print(f"3. Dosya '{output_filename}' olarak başarıyla kaydedildi.")
     except PermissionError:
-        saved_name = "puantaj_guncel.xlsx"
+        saved_name = output_filename.replace(".xlsx", "_guncel.xlsx")
         wb_new.save(saved_name)
-        print(f"4. UYARI: '{output_filename}' Microsoft Excel'de açık olduğu için '{saved_name}' olarak kaydedildi.")
-        print(f"   (Tam '{output_filename}' üzerine yazmak için Excel'i kapatıp tekrar çalıştırabilirsiniz).")
+        print(f"3. UYARI: '{output_filename}' açık olduğu için '{saved_name}' olarak kaydedildi.")
 
     print("==================================================")
     print(f" BAŞARILI! '{saved_name}' dosyası eksiksiz oluşturuldu.")
-    print(" - 8-5 Normal Çalışma ve 3 Vardiya (8-4 / 16-24 / 24-8) tam destekli")
-    print(f" - Özel Bölüm Primleri: {len(bonus_audit_records)} kayıt 'Bolum_Prim_Mesai_Raporu' sayfasına işlendi (Lila renkli)")
-    print(f" - İnsan Kontrolü Yönetimi: {len(missing_punch_records)} istisna/hata kaydı 'Eksik_Basim_Raporu' sayfasına işlendi (Turuncu renkli)")
+    print(f" - Özel Bölüm Primleri: {len(engine.bonus_records)} kayıt 'Bolum_Prim_Mesai_Raporu' sayfasına işlendi (Lila renkli)")
+    print(f" - İnsan Kontrolü Yönetimi: {len(engine.exception_records)} istisna kaydı 'Eksik_Basim_Raporu' sayfasına işlendi (Turuncu renkli)")
     print(" - Canlı Formüller (SUM, COUNTIF, IF, MIN, VLOOKUP) Aktif")
-    print(f" - {len(puantaj_rows)} personelin 30 günlük çalışma süreleri işlendi")
+    print(f" - {len(puantaj_rows)} personelin {engine.days_in_month} günlük çalışma süreleri işlendi")
     print("==================================================")
+    return saved_name
+
+def main():
+    build_puantaj_workbook(
+        pdks_path="pdks.xls",
+        puantaj_path="puantaj.xls",
+        target_month=9,
+        target_year=2026,
+        output_filename="puantaj.xlsx"
+    )
 
 if __name__ == "__main__":
     main()

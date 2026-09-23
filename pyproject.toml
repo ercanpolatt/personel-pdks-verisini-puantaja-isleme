@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fide-puantaj-pdks"
+version = "0.2.0"
+description = "FİDE Konserve - Akıllı Puantaj, PDKS Turnike Entegrasyonu ve Vardiya Hesaplama Sistemi"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openpyxl>=3.1.2",
+    "xlrd>=2.0.1",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+

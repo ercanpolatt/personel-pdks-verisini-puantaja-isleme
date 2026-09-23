@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "name": "Fide Konserve Vardiya ve Prim Kuralları",
+  "day_shift": {
+    "start_time": "08:00",
+    "tolerance_time": "08:20",
+    "end_time": "17:00",
+    "standard_hours": 7.5,
+    "lunch_break_hours": 1.5,
+    "late_cut_minutes": 30,
+    "late_cut_hours": 0.5,
+    "eight_four_window": {
+      "start": "15:50",
+      "end": "16:25"
+    }
+  },
+  "evening_shift": {
+    "start_time": "16:00",
+    "tolerance_time": "16:20",
+    "end_time": "24:00",
+    "standard_hours": 7.5,
+    "break_hours": 0.5
+  },
+  "night_shift": {
+    "start_time": "24:00",
+    "end_time": "08:00",
+    "standard_hours": 7.5,
+    "break_hours": 0.5
+  },
+  "overtime_policy": {
+    "grace_period_minutes": 25,
+    "step_hours": 0.5
+  },
+  "department_bonuses": {
+    "BALIK_DOLUM_KESIM": {
+      "name": "Balık Dolum ve Kesim Primi",
+      "match_keywords": ["BALIK DOLUM", "BALIK KESIM", "BALIK KES"],
+      "min_hours_threshold": 0.0,
+      "bonus_hours": 2.0,
+      "description": "Balık Dolum ve Kesim Primi: Çalışılan her güne saat fark etmeksizin +2.0 saat eklenir (Örn: 8s -> 10s, 9s -> 11s)"
+    },
+    "URETIM": {
+      "name": "Üretim Primi",
+      "match_keywords": ["URETIM", "URETIM ELEMANI", "KONSERVE URETIM"],
+      "min_hours_threshold": 12.0,
+      "bonus_hours": 4.0,
+      "description": "Üretim Primi: 12.0 saat ve üzeri çalışmalara +4.0 saat eklenir"
+    }
+  },
+  "missing_punch_policy": {
+    "morning_cutoff": "12:30",
+    "evening_cutoff": "20:00",
+    "default_morning_hours": 7.5,
+    "default_evening_start": "08:00"
+  }
+}
