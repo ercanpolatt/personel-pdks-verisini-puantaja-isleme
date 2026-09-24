@@ -11,7 +11,7 @@ Dinamik takvim (calendar) desteğiyle tüm ay ve yıllarla tam uyumludur.
 import calendar
 import re
 import unicodedata
-from collections import defaultdict
+from collections import defaultdict, Counter
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -255,6 +255,35 @@ def norm_name_key(s: Optional[str]) -> str:
         "MUHAMMEDSAMIHSERHAN": "MUHAMMEDSAMIHSERHAN",
     }
     return aliases.get(s, s)
+
+def _norm_dept_for_peers(dept: Optional[str]) -> str:
+    """Mesai arkadaşı analizi için bölüm isimlerini normalize eder."""
+    if not dept:
+        return "GENEL"
+    d = dept.strip().upper()
+    for tr, en in [("İ", "I"), ("Ğ", "G"), ("Ü", "U"), ("Ş", "S"), ("Ö", "O"), ("Ç", "C")]:
+        d = d.replace(tr, en)
+    if "BALIK TEM" in d:
+        return "BALIK TEMIZLEME"
+    if "BALIK DOL" in d:
+        return "BALIK DOLUM"
+    if "BALIK KES" in d:
+        return "BALIK KESIM"
+    if "URETIM" in d:
+        return "URETIM"
+    if "AMBAR" in d or "DEPO" in d:
+        return "AMBAR"
+    if "BAKIM" in d or "MEKANIK" in d:
+        return "BAKIM"
+    if "KAZAN" in d:
+        return "KAZAN"
+    if "ISLETME" in d:
+        return "ISLETME"
+    if "MEYDAN" in d:
+        return "MEYDAN"
+    if "SOFOR" in d:
+        return "SOFOR"
+    return d
 
 def clean_tc(tc_val) -> str:
     if tc_val is None:
@@ -1062,6 +1091,145 @@ class PDKSEngine:
                 self.exception_records.append(rec)
             if bonus_hours > 0:
                 self.bonus_records.append(rec)
+
+        # Tüm günlük sonuçlar hesaplandıktan sonra istisnalara akıllı amir önerilerini zenginleştir
+        self.enrich_exceptions_with_smart_suggestions()
+
+    def predict_smart_suggestion(self, rec: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Eksik veya tek basımlı istisna kayıtları için 3 kademeli akıllı amir önerisi üretir:
+        1. Kademe: Aynı gün ve aynı bölümde iki basımı tam olan mesai arkadaşlarının çıkış saati (%95 güven)
+        2. Kademe: Personelin ay içindeki normal vardiya alışkanlığı (%85 güven)
+        3. Kademe: Fabrika standart vardiya kuralı (7,5 saat) (%75 güven)
+        """
+        day = rec.get("gun")
+        dept = rec.get("bolum", "")
+        norm_dept = _norm_dept_for_peers(dept)
+        raw_g = rec.get("raw_g_saat", "-")
+        raw_c = rec.get("raw_c_saat", "-")
+        status_type = rec.get("status_type", "")
+        name_k = rec.get("name_key") or norm_name_key(rec.get("ad_soyad", ""))
+        display_dept = clean_display_text(dept) if dept else "Bölüm"
+
+        g_hm = parse_hm(raw_g)
+        is_morning_entry = g_hm and (6 * 60 <= g_hm[0] * 60 + g_hm[1] <= 12 * 60 + 30)
+
+        # -------------------------------------------------------------
+        # 1. KADEME: AYNI GÜN AYNI BÖLÜMDEKİ MESAİ ARKADAŞLARI ANALİZİ
+        # -------------------------------------------------------------
+        peer_exits = []
+        peer_entries = []
+        for (pk, d), drec in self.daily_results.items():
+            if d == day and pk != name_k:
+                p_dept = _norm_dept_for_peers(drec.get("bolum", ""))
+                if p_dept == norm_dept and not drec.get("is_exception", False) and drec.get("final_hours", 0) > 0:
+                    c_val = drec.get("raw_c_saat", "")
+                    g_val = drec.get("raw_g_saat", "")
+                    c_hm = parse_hm(c_val)
+                    if is_morning_entry:
+                        # Sabah giriş yapan işçi için gece vardiyasından çıkan mesai arkadaşı (örn 07:50 çıkışı) filtrelenir
+                        if c_hm and (c_hm[0] * 60 + c_hm[1] >= 15 * 60):
+                            peer_exits.append(c_val[:5])
+                    else:
+                        if c_val and c_val != "-":
+                            peer_exits.append(c_val[:5])
+                    if g_val and g_val != "-":
+                        peer_entries.append(g_val[:5])
+
+        if len(peer_exits) >= 2:
+            mode_exit, exit_count = Counter(peer_exits).most_common(1)[0]
+            mode_entry = Counter(peer_entries).most_common(1)[0][0] if peer_entries else "08:00"
+
+            if status_type == "GİRİŞ_YOK_AKŞAM" or (raw_g == "-" and raw_c != "-"):
+                eff_g = "08:00"
+                eff_c = raw_c
+                reason = f"{display_dept} bölümünde aynı gün ({day}. gün) çalışan {len(peer_exits)} mesai arkadaşının 08:00 başlangıcı ve mevcut {raw_c} çıkışı baz alındı."
+            else:
+                eff_g = raw_g if raw_g != "-" else "08:00"
+                eff_c = mode_exit
+                reason = f"{display_dept} bölümünde aynı gün ({day}. gün) çalışan {exit_count}/{len(peer_exits)} mesai arkadaşının çıkış saati ({mode_exit}) baz alındı."
+
+            s_res = calculate_shift_hours(eff_g, eff_c)
+            bonus_h, _ = calculate_department_bonus(dept, s_res.total_hours, self.rules)
+            tot_h = round(s_res.total_hours + bonus_h, 2)
+
+            if tot_h >= 4.0:
+                return {
+                    "suggested_hours": tot_h,
+                    "suggested_g": eff_g,
+                    "suggested_c": eff_c,
+                    "confidence": 95,
+                    "source": "DEPARTMENT_PEERS",
+                    "badge_class": "badge-peer",
+                    "reason": reason,
+                    "peer_count": exit_count if status_type != "GİRİŞ_YOK_AKŞAM" else len(peer_exits),
+                    "total_peers": len(peer_exits)
+                }
+
+        # -------------------------------------------------------------
+        # 2. KADEME: PERSONELİN AY İÇİNDEKİ KENDİ VARDİYA ALIŞKANLIĞI
+        # -------------------------------------------------------------
+        habit_exits = []
+        for (pk, d), drec in self.daily_results.items():
+            if pk == name_k and d != day and not drec.get("is_exception", False) and drec.get("final_hours", 0) > 0:
+                c_val = drec.get("raw_c_saat", "")
+                c_hm = parse_hm(c_val)
+                if is_morning_entry:
+                    if c_hm and (c_hm[0] * 60 + c_hm[1] >= 15 * 60):
+                        habit_exits.append(c_val[:5])
+                else:
+                    if c_val and c_val != "-":
+                        habit_exits.append(c_val[:5])
+
+        if len(habit_exits) >= 2:
+            mode_exit, habit_count = Counter(habit_exits).most_common(1)[0]
+            eff_g = raw_g if raw_g != "-" else "08:00"
+            eff_c = raw_c if raw_c != "-" else mode_exit
+            s_res = calculate_shift_hours(eff_g, eff_c)
+            bonus_h, _ = calculate_department_bonus(dept, s_res.total_hours, self.rules)
+            tot_h = round(s_res.total_hours + bonus_h, 2)
+
+            if tot_h >= 4.0:
+                return {
+                    "suggested_hours": tot_h,
+                    "suggested_g": eff_g,
+                    "suggested_c": eff_c,
+                    "confidence": 85,
+                    "source": "PERSONAL_HABIT",
+                    "badge_class": "badge-habit",
+                    "reason": f"Personelin bu aydaki {habit_count} günlük normal vardiya alışkanlığı ({mode_exit}) baz alındı.",
+                    "peer_count": 0,
+                    "total_peers": 0
+                }
+
+        # -------------------------------------------------------------
+        # 3. KADEME: FABRİKA STANDART VARDİYA KURALI (7,5 SAAT)
+        # -------------------------------------------------------------
+        eff_g = raw_g if raw_g != "-" else "08:00"
+        eff_c = raw_c if raw_c != "-" else "17:00"
+        bonus_h, _ = calculate_department_bonus(dept, 7.5, self.rules)
+        tot_std = round(7.5 + bonus_h, 2)
+        return {
+            "suggested_hours": tot_std,
+            "suggested_g": eff_g,
+            "suggested_c": eff_c,
+            "confidence": 75,
+            "source": "FACTORY_STANDARD",
+            "badge_class": "badge-std",
+            "reason": "Fabrika standart vardiya kuralı (7,5 saat tam gün) uygulandı.",
+            "peer_count": 0,
+            "total_peers": 0
+        }
+
+    def enrich_exceptions_with_smart_suggestions(self):
+        """Tüm istisna kayıtlarını akıllı amir önerisiyle zenginleştirir."""
+        for rec in self.exception_records:
+            sug = self.predict_smart_suggestion(rec)
+            rec["smart_suggestion"] = sug
+            name_k = rec.get("name_key") or norm_name_key(rec.get("ad_soyad", ""))
+            day_num = rec.get("gun")
+            if (name_k, day_num) in self.daily_results:
+                self.daily_results[(name_k, day_num)]["smart_suggestion"] = sug
 
     def get_summary_matrix(self) -> List[Dict]:
         """Personel bazında 1..days_in_month günlük saat matrisini ve toplamlarını döndürür."""

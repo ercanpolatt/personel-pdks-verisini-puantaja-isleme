@@ -538,6 +538,33 @@ class EngineManager:
         self.matrix = self.engine.get_summary_matrix()
         return self.resolved_exceptions[key]
 
+    def bulk_resolve_exceptions(self, items: List[Dict[str, Any]], resolved_by: str = "Vardiya Amiri / Toplu Onay") -> int:
+        """Birden çok istisna kaydını tek işlemde amir onayına alır ve puantajı günceller."""
+        now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+        count = 0
+        for item in items:
+            name_key = item.get("name_key")
+            day = item.get("day")
+            if not name_key or day is None:
+                continue
+            key = f"{name_key}:{day}"
+            approved_hours = float(item.get("approved_hours", 7.5))
+            note = item.get("note") or "Toplu Amir Onayı"
+            item_resolved_by = item.get("resolved_by") or resolved_by
+            self.resolved_exceptions[key] = {
+                "name_key": name_key,
+                "day": int(day),
+                "approved_hours": approved_hours,
+                "note": note,
+                "resolved_by": item_resolved_by,
+                "timestamp": now_str
+            }
+            count += 1
+        save_resolved_exceptions(self.resolved_exceptions)
+        self.apply_resolved_exceptions()
+        self.matrix = self.engine.get_summary_matrix()
+        return count
+
 # -----------------------------------------------------------------------------
 # FASTAPI UYGULAMASI TANIMI
 # -----------------------------------------------------------------------------
@@ -564,6 +591,19 @@ class ExceptionResolveRequest(BaseModel):
     approved_hours: float
     note: str
     resolved_by: Optional[str] = "Vardiya Amiri"
+
+class BulkExceptionResolveItem(BaseModel):
+    name_key: str
+    day: int
+    approved_hours: float
+    note: Optional[str] = "Toplu Amir Onayı"
+    resolved_by: Optional[str] = "Vardiya Amiri / Toplu Onay"
+
+class BulkExceptionResolveRequest(BaseModel):
+    items: List[BulkExceptionResolveItem]
+    action_type: Optional[str] = "custom"  # "smart", "standard_7_5", "custom"
+    global_note: Optional[str] = None
+    resolved_by: Optional[str] = "Vardiya Amiri / Toplu Onay"
 
 class RuleUpdateRequest(BaseModel):
     rules: Dict[str, Any]
@@ -960,6 +1000,7 @@ def get_exceptions(
         item["name_key"] = name_k
         item["is_resolved"] = is_resolved
         item["resolution"] = res_info
+        item["smart_suggestion"] = rec.get("smart_suggestion") or eng.predict_smart_suggestion(rec)
         results.append(item)
 
     search_val = _clean_str(search)
@@ -997,6 +1038,27 @@ def resolve_exception_endpoint(payload: ExceptionResolveRequest):
         resolved_by=payload.resolved_by or "Vardiya Amiri"
     )
     return {"status": "success", "message": "İstisna amir tarafından onaylandı ve puantaj güncellendi.", "data": saved}
+
+@app.post("/api/exceptions/bulk-resolve")
+def bulk_resolve_exceptions_endpoint(payload: BulkExceptionResolveRequest):
+    mgr = EngineManager.get_instance()
+    items_to_resolve = []
+    for it in payload.items:
+        note = payload.global_note or it.note or "Toplu Amir Onayı"
+        resolved_by = payload.resolved_by or it.resolved_by or "Vardiya Amiri / Toplu Onay"
+        items_to_resolve.append({
+            "name_key": it.name_key,
+            "day": it.day,
+            "approved_hours": it.approved_hours,
+            "note": note,
+            "resolved_by": resolved_by
+        })
+    resolved_count = mgr.bulk_resolve_exceptions(items_to_resolve, resolved_by=payload.resolved_by or "Vardiya Amiri / Toplu Onay")
+    return {
+        "status": "success",
+        "message": f"{resolved_count} istisna kaydı başarıyla toplu onaylandı ve puantaj güncellendi.",
+        "resolved_count": resolved_count
+    }
 
 @app.get("/api/bonuses")
 def get_bonuses(

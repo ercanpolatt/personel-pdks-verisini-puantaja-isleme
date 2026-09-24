@@ -32,6 +32,7 @@ const AppState = {
     status: 'all',
     search: '',
     items: [],
+    selectedKeys: new Set(),
     pendingCount: 0,
     resolvedCount: 0
   },
@@ -555,19 +556,39 @@ function renderExceptionsTable(items) {
   if (!tbody) return;
 
   if (items.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding: 30px; color: var(--text-dim);">Filtreye uygun istisna kaydı bulunmuyor.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 30px; color: var(--text-dim);">Filtreye uygun istisna kaydı bulunmuyor.</td></tr>`;
+    updateFloatingBulkBar();
     return;
   }
 
   let html = '';
   items.forEach((rec, idx) => {
     const isResolved = rec.is_resolved;
+    const itemKey = `${rec.name_key || rec.ad_soyad}:${rec.gun}`;
+    const isSelected = AppState.exceptions.selectedKeys.has(itemKey);
     const resTag = isResolved
       ? `<span class="status-tag tag-resolved">✓ ÇÖZÜLDÜ</span>`
       : `<span class="status-tag tag-pending">ONAY BEKLİYOR</span>`;
 
+    const sug = rec.smart_suggestion || {
+      suggested_hours: 7.5,
+      suggested_g: rec.raw_g_saat || '08:00',
+      suggested_c: '17:00',
+      confidence: 75,
+      source: 'FACTORY_STANDARD',
+      badge_class: 'badge-std',
+      reason: 'Standart vardiya kuralı (7,5s tam gün)'
+    };
+
+    const sourceLabel = sug.source === 'DEPARTMENT_PEERS' 
+      ? '👥 Bölüm Mesaisi' 
+      : (sug.source === 'PERSONAL_HABIT' ? '🕒 Vardiya Alışkanlığı' : '🏢 Standart Kural');
+
     html += `
-      <tr>
+      <tr class="${isSelected ? 'row-selected' : ''}">
+        <td style="text-align: center;">
+          <input type="checkbox" class="custom-checkbox exc-row-checkbox" data-key="${itemKey}" ${isSelected ? 'checked' : ''} onchange="toggleExceptionSelection('${itemKey}')">
+        </td>
         <td>${idx + 1}</td>
         <td class="cell-mono">${rec.tarih}</td>
         <td class="cell-bold">${rec.ad_soyad}</td>
@@ -579,11 +600,29 @@ function renderExceptionsTable(items) {
           <div style="font-size: 11px; color: var(--text-muted);">${rec.audit_note || ''}</div>
         </td>
         <td>
+          <div class="smart-suggestion-card">
+            <div class="smart-sug-header">
+              <span class="badge ${sug.badge_class || 'badge-peer'}">${sourceLabel}</span>
+              <span class="sug-conf-tag">%${sug.confidence} Güven</span>
+            </div>
+            <div class="smart-sug-body">
+              <span class="sug-hours">${fmtHours(sug.suggested_hours)}s</span>
+              <span class="sug-detail">(${sug.suggested_g} - ${sug.suggested_c})</span>
+            </div>
+            <div class="smart-sug-reason" title="${sug.reason}">${sug.reason}</div>
+            ${!isResolved ? `
+              <button type="button" class="btn-quick-accept" onclick="quickAcceptSuggestion('${itemKey}', ${sug.suggested_hours}, '${encodeURIComponent(sug.reason)}')">
+                ⚡ Öneriyi Kabul Et (${fmtHours(sug.suggested_hours)}s)
+              </button>
+            ` : ''}
+          </div>
+        </td>
+        <td>
           ${resTag}
           ${isResolved && rec.resolution ? `<div style="font-size: 10px; color: var(--color-success);">${rec.resolution.resolved_by || 'Amir'}: ${rec.resolution.approved_hours}s</div>` : ''}
         </td>
         <td style="text-align: center;">
-          <button class="btn btn-sm ${isResolved ? 'btn-outline' : 'btn-warning'}" onclick='openResolveModal(${JSON.stringify(rec)})'>
+          <button class="btn btn-sm ${isResolved ? 'btn-outline' : 'btn-warning'}" onclick="openResolveModalByKey('${itemKey}')">
             ${isResolved ? 'Düzenle' : 'Onayla'}
           </button>
         </td>
@@ -592,6 +631,246 @@ function renderExceptionsTable(items) {
   });
 
   tbody.innerHTML = html;
+  updateFloatingBulkBar();
+}
+
+function toggleExceptionSelection(key) {
+  if (AppState.exceptions.selectedKeys.has(key)) {
+    AppState.exceptions.selectedKeys.delete(key);
+  } else {
+    AppState.exceptions.selectedKeys.add(key);
+  }
+  updateFloatingBulkBar();
+}
+
+function toggleSelectAllExceptions(checked) {
+  const checkboxes = document.querySelectorAll('.exc-row-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = checked;
+    const key = cb.getAttribute('data-key');
+    if (key) {
+      if (checked) {
+        AppState.exceptions.selectedKeys.add(key);
+      } else {
+        AppState.exceptions.selectedKeys.delete(key);
+      }
+    }
+  });
+  updateFloatingBulkBar();
+}
+
+function updateFloatingBulkBar() {
+  const bar = document.getElementById('floatingBulkBar');
+  const countEl = document.getElementById('bulkSelectedCount');
+  const checkAll = document.getElementById('checkAllExceptions');
+  const count = AppState.exceptions.selectedKeys.size;
+
+  if (countEl) countEl.innerText = count;
+
+  if (bar) {
+    bar.style.display = count > 0 ? 'block' : 'none';
+  }
+
+  if (checkAll) {
+    const allRows = document.querySelectorAll('.exc-row-checkbox');
+    if (allRows.length === 0) {
+      checkAll.checked = false;
+      checkAll.indeterminate = false;
+    } else if (count === 0) {
+      checkAll.checked = false;
+      checkAll.indeterminate = false;
+    } else if (count >= allRows.length) {
+      checkAll.checked = true;
+      checkAll.indeterminate = false;
+    } else {
+      checkAll.checked = false;
+      checkAll.indeterminate = true;
+    }
+  }
+}
+
+function clearBulkSelection() {
+  AppState.exceptions.selectedKeys.clear();
+  document.querySelectorAll('.exc-row-checkbox').forEach(cb => {
+    cb.checked = false;
+  });
+  const checkAll = document.getElementById('checkAllExceptions');
+  if (checkAll) {
+    checkAll.checked = false;
+    checkAll.indeterminate = false;
+  }
+  updateFloatingBulkBar();
+}
+
+async function quickAcceptSuggestion(key, hours, reasonEncoded) {
+  const reason = decodeURIComponent(reasonEncoded || '');
+  const parts = key.split(':');
+  if (parts.length < 2) return;
+  const nameKey = parts[0];
+  const day = parseInt(parts[1]);
+
+  try {
+    const res = await fetch('/api/exceptions/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name_key: nameKey,
+        day: day,
+        approved_hours: hours,
+        note: `⚡ Akıllı Öneri Kabul Edildi: ${reason}`,
+        resolved_by: 'Vardiya Amiri / Akıllı Onay'
+      })
+    });
+    if (!res.ok) throw new Error('Öneri onaylanamadı');
+    const data = await res.json();
+    showToast(`⚡ ${hours}s çalışma süresi onaylandı ve puantaja işlendi.`, 'success');
+    loadExceptions();
+    loadStats();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
+
+async function bulkApplySmartSuggestions() {
+  if (AppState.exceptions.selectedKeys.size === 0) return;
+  const items = [];
+  for (const key of AppState.exceptions.selectedKeys) {
+    const rec = AppState.exceptions.items.find(r => (r.name_key || r.ad_soyad) + ':' + r.gun === key);
+    if (rec && rec.smart_suggestion) {
+      items.push({
+        name_key: rec.name_key || rec.ad_soyad,
+        day: rec.gun,
+        approved_hours: rec.smart_suggestion.suggested_hours,
+        note: `⚡ Akıllı Öneri: ${rec.smart_suggestion.reason}`
+      });
+    }
+  }
+
+  if (items.length === 0) {
+    showToast('Seçili kayıtlar için akıllı öneri bulunamadı.', 'warning');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/exceptions/bulk-resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: items,
+        action_type: 'smart',
+        global_note: '⚡ Akıllı Tahmin Motoru ile Toplu Amir Onayı',
+        resolved_by: 'Vardiya Amiri / Akıllı Toplu Onay'
+      })
+    });
+    if (!res.ok) throw new Error('Toplu akıllı onay başarısız oldu');
+    const data = await res.json();
+    showToast(`⚡ ${data.resolved_count} istisna kaydı kendi akıllı önerileriyle toplu onaylandı!`, 'success');
+    clearBulkSelection();
+    loadExceptions();
+    loadStats();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
+
+async function bulkApplyStandardHours() {
+  if (AppState.exceptions.selectedKeys.size === 0) return;
+  const items = [];
+  for (const key of AppState.exceptions.selectedKeys) {
+    const rec = AppState.exceptions.items.find(r => (r.name_key || r.ad_soyad) + ':' + r.gun === key);
+    if (rec) {
+      items.push({
+        name_key: rec.name_key || rec.ad_soyad,
+        day: rec.gun,
+        approved_hours: 7.5,
+        note: 'Standart tam gün (7,5s) toplu amir onayı'
+      });
+    }
+  }
+
+  try {
+    const res = await fetch('/api/exceptions/bulk-resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: items,
+        action_type: 'standard_7_5',
+        global_note: 'Standart tam gün (7,5s) toplu amir onayı',
+        resolved_by: 'Vardiya Amiri / Standart Onay'
+      })
+    });
+    if (!res.ok) throw new Error('Toplu standart onay başarısız oldu');
+    const data = await res.json();
+    showToast(`✅ ${data.resolved_count} istisna kaydına standart 7,5 saat uygulandı ve onaylandı!`, 'success');
+    clearBulkSelection();
+    loadExceptions();
+    loadStats();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
+
+function openBulkCustomHoursModal() {
+  const count = AppState.exceptions.selectedKeys.size;
+  if (count === 0) return;
+  const countEl = document.getElementById('bulkModalCount');
+  if (countEl) countEl.innerText = count;
+  openModal('modalBulkCustomHours');
+}
+
+async function submitBulkCustomHours(e) {
+  e.preventDefault();
+  const count = AppState.exceptions.selectedKeys.size;
+  if (count === 0) {
+    closeModal('modalBulkCustomHours');
+    return;
+  }
+  const hours = parseFloat(document.getElementById('bulkCustomHoursInput').value);
+  const resolver = document.getElementById('bulkCustomResolver').value || 'Vardiya Amiri / Toplu Onay';
+  const note = document.getElementById('bulkCustomNote').value || `${hours}s toplu amir mesai onayı`;
+
+  const items = [];
+  for (const key of AppState.exceptions.selectedKeys) {
+    const rec = AppState.exceptions.items.find(r => (r.name_key || r.ad_soyad) + ':' + r.gun === key);
+    if (rec) {
+      items.push({
+        name_key: rec.name_key || rec.ad_soyad,
+        day: rec.gun,
+        approved_hours: hours,
+        note: note,
+        resolved_by: resolver
+      });
+    }
+  }
+
+  try {
+    const res = await fetch('/api/exceptions/bulk-resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: items,
+        action_type: 'custom',
+        global_note: note,
+        resolved_by: resolver
+      })
+    });
+    if (!res.ok) throw new Error('Toplu özel saat onayı başarısız oldu');
+    const data = await res.json();
+    showToast(`✏️ ${data.resolved_count} personele ${hours} saat toplu uygulandı ve onaylandı!`, 'success');
+    closeModal('modalBulkCustomHours');
+    clearBulkSelection();
+    loadExceptions();
+    loadStats();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
+
+function openResolveModalByKey(itemKey) {
+  const rec = AppState.exceptions.items.find(r => (r.name_key || r.ad_soyad) + ':' + r.gun === itemKey);
+  if (rec) {
+    openResolveModal(rec);
+  }
 }
 
 function openResolveModal(rec) {
@@ -621,6 +900,11 @@ function openResolveModal(rec) {
     <div><strong>Bölüm:</strong> ${rec.bolum || '-'}</div>
     <div><strong>Turnike Basımları:</strong> <span class="cell-mono">${rec.all_punches || rec.raw_g_saat || '-'}</span></div>
     <div><strong>Hata Durumu:</strong> <span style="color:var(--color-warning);">${rec.status_type} (${rec.audit_note || 'Tek Basım'})</span></div>
+    ${rec.smart_suggestion ? `
+      <div style="margin-top: 8px; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; font-size: 11.5px; color: #bae6fd;">
+        ⚡ <strong>Sistem Tahmini:</strong> ${fmtHours(rec.smart_suggestion.suggested_hours)} saat (%${rec.smart_suggestion.confidence} Güven) — ${rec.smart_suggestion.reason}
+      </div>
+    ` : ''}
   `;
 
   openModal('modalResolveException');
@@ -1527,6 +1811,39 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Hata: ' + err.message, 'error');
       }
     });
+  }
+
+  // 4b. Toplu İşlem & Akıllı Amir Onay Masası Dinleyicileri
+  const checkAllExceptions = document.getElementById('checkAllExceptions');
+  if (checkAllExceptions) {
+    checkAllExceptions.addEventListener('change', (e) => {
+      toggleSelectAllExceptions(e.target.checked);
+    });
+  }
+
+  const btnBulkApplySmart = document.getElementById('btnBulkApplySmart');
+  if (btnBulkApplySmart) {
+    btnBulkApplySmart.addEventListener('click', bulkApplySmartSuggestions);
+  }
+
+  const btnBulkApplyStandard = document.getElementById('btnBulkApplyStandard');
+  if (btnBulkApplyStandard) {
+    btnBulkApplyStandard.addEventListener('click', bulkApplyStandardHours);
+  }
+
+  const btnBulkCustomHours = document.getElementById('btnBulkCustomHours');
+  if (btnBulkCustomHours) {
+    btnBulkCustomHours.addEventListener('click', openBulkCustomHoursModal);
+  }
+
+  const btnBulkClearSelection = document.getElementById('btnBulkClearSelection');
+  if (btnBulkClearSelection) {
+    btnBulkClearSelection.addEventListener('click', clearBulkSelection);
+  }
+
+  const formBulkCustom = document.getElementById('formBulkCustomHours');
+  if (formBulkCustom) {
+    formBulkCustom.addEventListener('submit', submitBulkCustomHours);
   }
 
   // 5. Prim Masası Filtreleri
