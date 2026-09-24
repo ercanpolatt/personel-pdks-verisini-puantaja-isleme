@@ -221,6 +221,222 @@ def generate_financial_excel(fin_data: Dict[str, Any], output_path: str = "maas_
     wb.save(output_path)
     return output_path
 
+def generate_compliance_excel(comp_data: Dict[str, Any], output_path: str):
+    """3 Sayfalı Resmi İş Teftişi ve SGK Yasal Uyum Denetim Çalışma Kitabı."""
+    wb = Workbook()
+    
+    font_title = Font(name="Arial", size=13, bold=True, color="1E3A8A")
+    font_head = Font(name="Arial", size=9, bold=True, color="FFFFFF")
+    font_bold = Font(name="Arial", size=9, bold=True)
+    font_data = Font(name="Arial", size=9)
+    font_critical = Font(name="Arial", size=9, bold=True, color="991B1B")
+    font_warning = Font(name="Arial", size=9, bold=True, color="92400E")
+    
+    fill_navy = PatternFill("solid", fgColor="1E293B")
+    fill_crimson = PatternFill("solid", fgColor="FEE2E2")
+    fill_amber = PatternFill("solid", fgColor="FEF3C7")
+    
+    border_thin = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1")
+    )
+    
+    # -------------------------------------------------------------------------
+    # SAYFA 1: UYUM VE RİSK ÖZETİ
+    # -------------------------------------------------------------------------
+    ws_sum = wb.active
+    ws_sum.title = "Yasal_Uyum_ve_Risk_Ozeti"
+    ws_sum.views.sheetView[0].showGridLines = True
+    
+    ws_sum.merge_cells("A1:H1")
+    ws_sum["A1"] = "FİDE KONSERVE — 4857 SAYILI İŞ KANUNU VE SGK YASAL UYUM & RİSK ANALİZİ (EYLÜL 2026)"
+    ws_sum["A1"].font = font_title
+    ws_sum["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_sum.row_dimensions[1].height = 28
+    
+    s = comp_data["summary"]
+    kpis = [
+        ("Fabrika Yasal Uyum Endeksi", f"%{s['compliance_index']:.1f}", f"Risk Seviyesi: {s['risk_status']}"),
+        ("İncelenen Aktif Çalışan", f"{s['inspected_personnel']} Personel", "PDKS kart basan tüm çalışanlar"),
+        ("Toplam Yasal İhlal Sayısı", f"{s['total_violations']} Olay", f"Kritik: {s['critical_violations']}, Uyarı: {s['warning_violations']}"),
+        ("11 Saat Dinlenme İhlalleri (Md. 68)", f"{s['rest_violations_count']} Olay", "Postalar Halinde Çalışma Yön. Md. 9"),
+        ("7+ Gün Kesintisiz Çalışma (Md. 46)", f"{s['consecutive_work_count']} Dönem", "Hafta tatili verilmeyen çalışma blokları"),
+        ("270 Saat Aşım Riski (Md. 41)", f"{s['overtime_limit_count']} Personel", "Aylık 35 saat ve üzeri fazla mesai yapanlar"),
+        ("En Yüksek Riskli Departman", f"{s['highest_risk_department']}", "İhlal ve aşırı mesai yoğunluğu")
+    ]
+    
+    ws_sum["A3"] = "YASAL DENETİM VE RİSK GÖSTERGELERİ (KPI)"
+    ws_sum["A3"].font = Font(name="Arial", size=10, bold=True, color="0F172A")
+    
+    for idx, (label, val, desc) in enumerate(kpis, start=4):
+        ws_sum[f"A{idx}"] = label
+        ws_sum[f"B{idx}"] = val
+        ws_sum[f"C{idx}"] = desc
+        ws_sum[f"A{idx}"].font = font_bold
+        ws_sum[f"B{idx}"].font = Font(name="Arial", size=10, bold=True, color="1E3A8A")
+        ws_sum[f"C{idx}"].font = Font(name="Arial", size=9, italic=True, color="64748B")
+        for col in ("A", "B", "C"):
+            ws_sum[f"{col}{idx}"].border = border_thin
+            
+    ws_sum.column_dimensions["A"].width = 38
+    ws_sum.column_dimensions["B"].width = 24
+    ws_sum.column_dimensions["C"].width = 45
+    
+    start_r = 13
+    ws_sum[f"A{start_r}"] = "DEPARTMAN BAZLI YASAL UYUM VE RİSK MATRİSİ"
+    ws_sum[f"A{start_r}"].font = Font(name="Arial", size=10, bold=True, color="0F172A")
+    
+    dept_heads = [
+        ("Departman", 22), ("Aktif Kadro", 13), ("11s Dinlenme", 14), ("Hafta Tatilsiz", 14),
+        ("270s FM Riski", 14), ("Toplam Olay", 13), ("Uyum Skoru (%)", 15), ("Risk Seviyesi", 15)
+    ]
+    
+    ws_sum.row_dimensions[start_r + 1].height = 24
+    for c_idx, (h_text, w) in enumerate(dept_heads, start=1):
+        col_let = get_column_letter(c_idx)
+        cell = ws_sum[f"{col_let}{start_r + 1}"]
+        cell.value = h_text
+        cell.font = font_head
+        cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws_sum.column_dimensions[col_let].width = w
+        
+    for r_idx, d in enumerate(comp_data["department_compliance"], start=start_r + 2):
+        ws_sum[f"A{r_idx}"] = d["department"]
+        ws_sum[f"B{r_idx}"] = d["active_headcount"]
+        ws_sum[f"C{r_idx}"] = d["rest_count"]
+        ws_sum[f"D{r_idx}"] = d["consecutive_count"]
+        ws_sum[f"E{r_idx}"] = d["ot_risk_count"]
+        ws_sum[f"F{r_idx}"] = d["total_violations"]
+        ws_sum[f"G{r_idx}"] = d["compliance_score"] / 100.0
+        ws_sum[f"H{r_idx}"] = d["risk_level"]
+        
+        ws_sum[f"A{r_idx}"].font = font_bold
+        for c in range(1, 9):
+            cl = get_column_letter(c)
+            cell = ws_sum[f"{cl}{r_idx}"]
+            cell.border = border_thin
+            if c not in (1, 8):
+                cell.font = font_data
+            if c == 1:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            elif c in (2, 3, 4, 5, 6):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif c == 7:
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+                cell.number_format = "0.0%"
+            elif c == 8:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.font = font_critical if d["risk_level"] == "YÜKSEK" else (font_warning if d["risk_level"] == "ORTA" else font_bold)
+                cell.fill = fill_crimson if d["risk_level"] == "YÜKSEK" else (fill_amber if d["risk_level"] == "ORTA" else PatternFill(fill_type=None))
+                
+    # -------------------------------------------------------------------------
+    # SAYFA 2: 11 SAAT DİNLENME İHLALLERİ (MADDE 68)
+    # -------------------------------------------------------------------------
+    ws_rest = wb.create_sheet(title="11_Saat_Dinlenme_Ihlalleri")
+    ws_rest.views.sheetView[0].showGridLines = True
+    
+    rest_heads = [
+        ("Sıra", 6), ("TC Kimlik No", 14), ("Adı Soyadı", 24), ("Bölüm", 20),
+        ("Vardiya Geçiş Tarihi", 18), ("Çıkış Saati", 13), ("İşbaşı Saati", 13),
+        ("Dinlenme Süresi", 16), ("Yasal Limit", 14), ("Ciddiyet", 12),
+        ("Yasal Dayanak", 32), ("Denetim Açıklaması", 48)
+    ]
+    
+    ws_rest.row_dimensions[1].height = 25
+    for c_idx, (h_text, w) in enumerate(rest_heads, start=1):
+        col_let = get_column_letter(c_idx)
+        cell = ws_rest[f"{col_let}1"]
+        cell.value = h_text
+        cell.font = font_head
+        cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws_rest.column_dimensions[col_let].width = w
+        
+    for r_idx, v in enumerate(comp_data["rest_violations"], start=2):
+        ws_rest[f"A{r_idx}"] = r_idx - 1
+        ws_rest[f"B{r_idx}"] = v["tc"]
+        ws_rest[f"C{r_idx}"] = v["ad_soyad"]
+        ws_rest[f"D{r_idx}"] = v["bolum"]
+        ws_rest[f"E{r_idx}"] = v["date_str"]
+        ws_rest[f"F{r_idx}"] = v["c1"]
+        ws_rest[f"G{r_idx}"] = v["g2"]
+        ws_rest[f"H{r_idx}"] = v["metric_value"]
+        ws_rest[f"I{r_idx}"] = v["legal_limit"]
+        ws_rest[f"J{r_idx}"] = "KRİTİK" if v["severity"] == "CRITICAL" else "UYARI"
+        ws_rest[f"K{r_idx}"] = v["legal_article"]
+        ws_rest[f"L{r_idx}"] = v["detail"]
+        
+        ws_rest[f"C{r_idx}"].font = font_bold
+        for c in range(1, 13):
+            cl = get_column_letter(c)
+            cell = ws_rest[f"{cl}{r_idx}"]
+            cell.border = border_thin
+            if c not in (3, 10):
+                cell.font = font_data
+            if c in (1, 5, 6, 7, 8, 9):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif c == 10:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.font = font_critical if v["severity"] == "CRITICAL" else font_warning
+                cell.fill = fill_crimson if v["severity"] == "CRITICAL" else fill_amber
+                
+    # -------------------------------------------------------------------------
+    # SAYFA 3: HAFTA TATİLİ VE 270 SAAT MESAİ RİSKLERİ
+    # -------------------------------------------------------------------------
+    ws_other = wb.create_sheet(title="Hafta_Tatili_ve_270s_Riskleri")
+    ws_other.views.sheetView[0].showGridLines = True
+    
+    other_heads = [
+        ("Sıra", 6), ("TC Kimlik No", 14), ("Adı Soyadı", 24), ("Bölüm", 20),
+        ("İhlal / Risk Türü", 26), ("Dönem / Tarih", 18), ("Tespit Edilen Değer", 18),
+        ("Yasal Sınır", 22), ("Risk Derecesi", 13), ("Yasal Dayanak", 32),
+        ("Denetim ve İdari Risk Notu", 48)
+    ]
+    
+    ws_other.row_dimensions[1].height = 25
+    for c_idx, (h_text, w) in enumerate(other_heads, start=1):
+        col_let = get_column_letter(c_idx)
+        cell = ws_other[f"{col_let}1"]
+        cell.value = h_text
+        cell.font = font_head
+        cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws_other.column_dimensions[col_let].width = w
+        
+    other_list = comp_data["consecutive_violations"] + comp_data["overtime_risks"]
+    for r_idx, v in enumerate(other_list, start=2):
+        ws_other[f"A{r_idx}"] = r_idx - 1
+        ws_other[f"B{r_idx}"] = v["tc"]
+        ws_other[f"C{r_idx}"] = v["ad_soyad"]
+        ws_other[f"D{r_idx}"] = v["bolum"]
+        ws_other[f"E{r_idx}"] = v["violation_title"]
+        ws_other[f"F{r_idx}"] = v["date_str"]
+        ws_other[f"G{r_idx}"] = v["metric_value"]
+        ws_other[f"H{r_idx}"] = v["legal_limit"]
+        ws_other[f"I{r_idx}"] = "KRİTİK" if v["severity"] == "CRITICAL" else "UYARI"
+        ws_other[f"J{r_idx}"] = v["legal_article"]
+        ws_other[f"K{r_idx}"] = v["detail"]
+        
+        ws_other[f"C{r_idx}"].font = font_bold
+        for c in range(1, 12):
+            cl = get_column_letter(c)
+            cell = ws_other[f"{cl}{r_idx}"]
+            cell.border = border_thin
+            if c not in (3, 9):
+                cell.font = font_data
+            if c in (1, 6, 7, 8):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif c == 9:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.font = font_critical if v["severity"] == "CRITICAL" else font_warning
+                cell.fill = fill_crimson if v["severity"] == "CRITICAL" else fill_amber
+
+    wb.save(output_path)
+    return output_path
+
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
@@ -412,6 +628,7 @@ def get_stats():
     resolved_count = len(mgr.resolved_exceptions)
     pending_exceptions = max(0, len(eng.exception_records) - resolved_count)
     fin_radar = eng.calculate_financial_radar()
+    comp_radar = eng.calculate_legal_compliance_radar()
 
     return {
         "period": f"{eng.target_month:02d}.{eng.target_year}",
@@ -432,7 +649,8 @@ def get_stats():
         "pending_exceptions": pending_exceptions,
         "departments": dept_map,
         "daily_trends": daily_trends,
-        "financial_summary": fin_radar["summary"]
+        "financial_summary": fin_radar["summary"],
+        "compliance_summary": comp_radar["summary"]
     }
 
 @app.get("/api/matrix")
@@ -707,6 +925,83 @@ def get_financial_radar(
         "items": page_items
     }
 
+@app.get("/api/compliance-radar")
+def get_compliance_radar(
+    violation_type: Optional[str] = Query("all", description="all, REST_11H, CONSECUTIVE_7D, OVERTIME_270H"),
+    severity: Optional[str] = Query("all", description="all, CRITICAL, WARNING"),
+    department: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500)
+):
+    # Unwrap default Query params if called directly from python
+    if hasattr(page, 'default'):
+        page = page.default
+    if hasattr(page_size, 'default'):
+        page_size = page_size.default
+    if hasattr(violation_type, 'default'):
+        violation_type = violation_type.default
+    if hasattr(severity, 'default'):
+        severity = severity.default
+    if hasattr(department, 'default'):
+        department = department.default
+    if hasattr(search, 'default'):
+        search = search.default
+
+    page = int(page or 1)
+    page_size = int(page_size or 50)
+
+    mgr = EngineManager.get_instance()
+    comp = mgr.engine.calculate_legal_compliance_radar()
+
+    items = comp["violations"]
+    vtype_val = _clean_str(violation_type) or "all"
+    sev_val = _clean_str(severity) or "all"
+    dept_val = _clean_str(department)
+    search_val = _clean_str(search)
+
+    if vtype_val != "all":
+        items = [v for v in items if v["violation_type"] == vtype_val]
+    if sev_val != "all":
+        items = [v for v in items if v["severity"] == sev_val]
+    if dept_val and dept_val != "all":
+        items = [v for v in items if v["bolum"] == dept_val]
+    if search_val:
+        items = [
+            v for v in items
+            if _matches_search(v["ad_soyad"], search_val)
+            or _matches_search(str(v.get("tc", "")), search_val)
+            or _matches_search(str(v.get("bolum", "")), search_val)
+            or _matches_search(str(v.get("violation_title", "")), search_val)
+            or _matches_search(str(v.get("legal_article", "")), search_val)
+            or _matches_search(str(v.get("detail", "")), search_val)
+        ]
+
+    total_count = len(items)
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_items = items[start_idx:end_idx]
+
+    unique_depts = sorted(list({d["department"] for d in comp["department_compliance"] if d.get("department")}))
+
+    return {
+        "summary": comp["summary"],
+        "department_compliance": comp["department_compliance"],
+        "departments": unique_depts,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "pagination": {
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages
+        },
+        "items": page_items
+    }
+
 @app.get("/api/rules")
 def get_rules():
     rules = load_rules()
@@ -748,8 +1043,11 @@ def generate_reports():
         # 5. Maaş ve Fazla Mesai Maliyet Raporu
         fin = eng.calculate_financial_radar()
         generate_financial_excel(fin, os.path.join(BASE_DIR, "maas_ve_maliyet_radari.xlsx"))
+        # 6. Yasal Uyum ve Risk Radarı Raporu
+        comp = eng.calculate_legal_compliance_radar()
+        generate_compliance_excel(comp, os.path.join(BASE_DIR, "yasal_uyum_ve_risk_radari.xlsx"))
         
-        return {"status": "success", "message": "Tüm raporlar ve maliyet bütçe kitapları başarıyla üretildi!"}
+        return {"status": "success", "message": "Tüm raporlar ve yasal denetim kitapları başarıyla üretildi!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rapor üretimi sırasında hata oluştu: {str(e)}")
 
@@ -760,6 +1058,7 @@ def download_report(report_type: str):
         "gunluk_xlsx": ("gunluk_calisma_raporu.xlsx", "Fide_Konserve_Gunluk_Calisma_Raporu.xlsx"),
         "simple_xlsx": ("pdks_eylul_gunluk_calisma_saatleri.xlsx", "Fide_Konserve_Alfabetik_Calisma_Cetveli.xlsx"),
         "financial_xlsx": ("maas_ve_maliyet_radari.xlsx", "Fide_Konserve_Maas_ve_Maliyet_Radari.xlsx"),
+        "compliance_xlsx": ("yasal_uyum_ve_risk_radari.xlsx", "Fide_Konserve_Yasal_Uyum_ve_Risk_Radari.xlsx"),
         "csv": ("gunluk_calismalar.csv", "Fide_Konserve_PDKS_Gunluk_Calismalar.csv"),
         "json": ("gunluk_calismalar.json", "Fide_Konserve_PDKS_Gunluk_Calismalar.json")
     }
@@ -775,6 +1074,10 @@ def download_report(report_type: str):
             mgr = EngineManager.get_instance()
             fin = mgr.engine.calculate_financial_radar()
             generate_financial_excel(fin, file_path)
+        elif report_type == "compliance_xlsx":
+            mgr = EngineManager.get_instance()
+            comp = mgr.engine.calculate_legal_compliance_radar()
+            generate_compliance_excel(comp, file_path)
         else:
             raise HTTPException(status_code=404, detail=f"Dosya bulunamadı: {target_file}. Lütfen önce 'Raporları Üret' düğmesini çalıştırın.")
 

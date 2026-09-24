@@ -1297,3 +1297,279 @@ class PDKSEngine:
             "personnel": personnel_costs,
             "personnel_costs": personnel_costs
         }
+
+    def calculate_legal_compliance_radar(self) -> Dict[str, Any]:
+        """
+        4857 Sayılı İş Kanunu ve SGK Yasal Uyum & Risk Radarı.
+        İş Müfettişi ve SGK denetim risklerini sıfıra indiren 3 temel yasal kural denetimi:
+        1. 11 Saat Kesintisiz Günlük Dinlenme Kuralı (Madde 68 & Postalar Yönetmeliği Md. 9)
+        2. 7 Gün Kesintisiz Çalışma & Hafta Tatili İhlali (Madde 46)
+        3. Yıllık 270 Saat Fazla Mesai & Aylık Aşırı Çalışma Sınırı (Madde 41)
+        """
+        matrix = self.get_summary_matrix()
+        active_matrix = {m["name_key"]: m for m in matrix if m["total_work_days"] > 0}
+        
+        all_violations: List[Dict[str, Any]] = []
+        rest_violations: List[Dict[str, Any]] = []
+        consecutive_violations: List[Dict[str, Any]] = []
+        overtime_risks: List[Dict[str, Any]] = []
+        
+        dept_compliance: Dict[str, Dict[str, Any]] = {}
+
+        # ---------------------------------------------------------------------
+        # 1. KURAL: 11 SAAT KESİNTİSİZ GÜNLÜK DİNLENME KURALI (Madde 68)
+        # ---------------------------------------------------------------------
+        for p in self.personnel_list:
+            name_k = p["name_key"]
+            if name_k not in active_matrix:
+                continue
+            
+            p_mat = active_matrix[name_k]
+            dept = p_mat.get("bolum") or "Bilinmeyen"
+            
+            for d in range(1, self.days_in_month):
+                r1 = self.daily_results.get((name_k, d))
+                r2 = self.daily_results.get((name_k, d + 1))
+                if not r1 or not r2:
+                    continue
+                
+                c1 = r1.get("raw_c_saat", "-")
+                g2 = r2.get("raw_g_saat", "-")
+                if c1 == "-" or g2 == "-" or r1.get("final_hours", 0.0) <= 0 or r2.get("final_hours", 0.0) <= 0:
+                    continue
+                
+                t1 = parse_hm(c1)
+                t2 = parse_hm(g2)
+                if t1 is None or t2 is None:
+                    continue
+                
+                c1_min = t1[0] * 60 + t1[1]
+                g2_min = t2[0] * 60 + t2[1]
+                
+                # Dinlenme süresi (saat cinsinden)
+                rest_hours = ((1440 - c1_min) + g2_min) / 60.0
+                
+                if 0.0 < rest_hours < 11.0:
+                    severity = "CRITICAL" if rest_hours < 8.0 else "WARNING"
+                    v_item = {
+                        "id": f"REST_{name_k}_{d}_{d+1}",
+                        "name_key": name_k,
+                        "ad_soyad": p["ad_soyad"],
+                        "tc": p["tc"],
+                        "bolum": dept,
+                        "violation_type": "REST_11H",
+                        "violation_title": "11 Saat Altı Dinlenme",
+                        "severity": severity,
+                        "date_str": f"{d:02d}.{self.target_month:02d} → {d+1:02d}.{self.target_month:02d}",
+                        "start_day": d,
+                        "end_day": d + 1,
+                        "c1": c1,
+                        "g2": g2,
+                        "metric_value": f"{rest_hours:.1f} saat",
+                        "legal_limit": "En az 11,0 saat",
+                        "legal_article": "4857 SK Madde 68 & Postalar Yön. Md. 9",
+                        "detail": f"{c1} çıkışından sonra ertesi gün {g2} işbaşı yapıldı. Aradaki dinlenme süresi {rest_hours:.1f} saat (Yasal açık: {11.0 - rest_hours:.1f} saat)."
+                    }
+                    rest_violations.append(v_item)
+                    all_violations.append(v_item)
+
+        # ---------------------------------------------------------------------
+        # 2. KURAL: 7 GÜN KESİNTİSİZ ÇALIŞMA / HAFTA TATİLİ İHLALİ (Madde 46)
+        # ---------------------------------------------------------------------
+        for p in self.personnel_list:
+            name_k = p["name_key"]
+            if name_k not in active_matrix:
+                continue
+            
+            p_mat = active_matrix[name_k]
+            dept = p_mat.get("bolum") or "Bilinmeyen"
+            
+            days_worked = [
+                d for d in range(1, self.days_in_month + 1)
+                if self.daily_results.get((name_k, d)) and self.daily_results.get((name_k, d)).get("raw_g_saat") != "-" and self.daily_results.get((name_k, d)).get("final_hours", 0.0) > 0
+            ]
+            
+            streak: List[int] = []
+            for d in range(1, self.days_in_month + 1):
+                if d in days_worked:
+                    streak.append(d)
+                else:
+                    if len(streak) >= 7:
+                        consec_len = len(streak)
+                        severity = "CRITICAL" if consec_len >= 10 else "WARNING"
+                        v_item = {
+                            "id": f"CONSEC_{name_k}_{streak[0]}_{streak[-1]}",
+                            "name_key": name_k,
+                            "ad_soyad": p["ad_soyad"],
+                            "tc": p["tc"],
+                            "bolum": dept,
+                            "violation_type": "CONSECUTIVE_7D",
+                            "violation_title": f"{consec_len} Gün Kesintisiz Çalışma",
+                            "severity": severity,
+                            "date_str": f"{streak[0]:02d}.{self.target_month:02d} - {streak[-1]:02d}.{self.target_month:02d}",
+                            "start_day": streak[0],
+                            "end_day": streak[-1],
+                            "c1": "-",
+                            "g2": "-",
+                            "metric_value": f"{consec_len} gün aralıksız",
+                            "legal_limit": "Azami 6 gün (7. gün 24s tatil)",
+                            "legal_article": "4857 SK Madde 46 (Hafta Tatili)",
+                            "detail": f"Çalışana yasal 24 saatlik dinlenme hakkı tanınmadan {consec_len} gün kesintisiz mesai yaptırılmıştır."
+                        }
+                        consecutive_violations.append(v_item)
+                        all_violations.append(v_item)
+                    streak = []
+            
+            if len(streak) >= 7:
+                consec_len = len(streak)
+                severity = "CRITICAL" if consec_len >= 10 else "WARNING"
+                v_item = {
+                    "id": f"CONSEC_{name_k}_{streak[0]}_{streak[-1]}",
+                    "name_key": name_k,
+                    "ad_soyad": p["ad_soyad"],
+                    "tc": p["tc"],
+                    "bolum": dept,
+                    "violation_type": "CONSECUTIVE_7D",
+                    "violation_title": f"{consec_len} Gün Kesintisiz Çalışma",
+                    "severity": severity,
+                    "date_str": f"{streak[0]:02d}.{self.target_month:02d} - {streak[-1]:02d}.{self.target_month:02d}",
+                    "start_day": streak[0],
+                    "end_day": streak[-1],
+                    "c1": "-",
+                    "g2": "-",
+                    "metric_value": f"{consec_len} gün aralıksız",
+                    "legal_limit": "Azami 6 gün (7. gün 24s tatil)",
+                    "legal_article": "4857 SK Madde 46 (Hafta Tatili)",
+                    "detail": f"Çalışana yasal 24 saatlik dinlenme hakkı tanınmadan {consec_len} gün kesintisiz mesai yaptırılmıştır."
+                }
+                consecutive_violations.append(v_item)
+                all_violations.append(v_item)
+
+        # ---------------------------------------------------------------------
+        # 3. KURAL: YILLIK 270 SAAT FAZLA MESAİ & AŞIRI ÇALIŞMA (Madde 41)
+        # ---------------------------------------------------------------------
+        for name_k, p_mat in active_matrix.items():
+            ot = p_mat.get("total_ot_hours", 0.0)
+            dept = p_mat.get("bolum") or "Bilinmeyen"
+            p_info = self.personnel_by_key.get(name_k, {})
+            
+            if ot >= 35.0:
+                severity = "CRITICAL" if ot >= 50.0 else "WARNING"
+                title = "270 Saat Aşım Riski (Kritik)" if ot >= 50.0 else "Aşırı Aylık Fazla Mesai"
+                v_item = {
+                    "id": f"OT270_{name_k}",
+                    "name_key": name_k,
+                    "ad_soyad": p_mat["ad_soyad"],
+                    "tc": p_mat.get("tc", ""),
+                    "bolum": dept,
+                    "violation_type": "OVERTIME_270H",
+                    "violation_title": title,
+                    "severity": severity,
+                    "date_str": f"Eylül {self.target_year}",
+                    "start_day": 1,
+                    "end_day": self.days_in_month,
+                    "c1": "-",
+                    "g2": "-",
+                    "metric_value": f"{ot:.1f} saat FM",
+                    "legal_limit": "Yılda azami 270 saat (Ayda ~22.5s)",
+                    "legal_article": "4857 SK Madde 41 & Fazla Çalışma Yön. Md. 5",
+                    "detail": f"Eylül ayında tek başına {ot:.1f} saat fazla mesai yapılmıştır. Yıllık 270 saat yasal üst sınırını delme riski çok yüksektir."
+                }
+                overtime_risks.append(v_item)
+                all_violations.append(v_item)
+
+        # ---------------------------------------------------------------------
+        # DEPARTMAN BAZLI UYUM VE RİSK ANALİZİ
+        # ---------------------------------------------------------------------
+        for name_k, p_mat in active_matrix.items():
+            dept = p_mat.get("bolum") or "Bilinmeyen"
+            if dept not in dept_compliance:
+                dept_compliance[dept] = {
+                    "department": dept,
+                    "active_headcount": 0,
+                    "rest_count": 0,
+                    "consecutive_count": 0,
+                    "ot_risk_count": 0,
+                    "critical_count": 0,
+                    "warning_count": 0,
+                    "total_violations": 0,
+                    "compliance_score": 100.0,
+                    "risk_level": "DÜŞÜK"
+                }
+            dept_compliance[dept]["active_headcount"] += 1
+
+        for v in all_violations:
+            dept = v["bolum"]
+            if dept in dept_compliance:
+                dept_compliance[dept]["total_violations"] += 1
+                if v["severity"] == "CRITICAL":
+                    dept_compliance[dept]["critical_count"] += 1
+                else:
+                    dept_compliance[dept]["warning_count"] += 1
+                    
+                if v["violation_type"] == "REST_11H":
+                    dept_compliance[dept]["rest_count"] += 1
+                elif v["violation_type"] == "CONSECUTIVE_7D":
+                    dept_compliance[dept]["consecutive_count"] += 1
+                elif v["violation_type"] == "OVERTIME_270H":
+                    dept_compliance[dept]["ot_risk_count"] += 1
+
+        for dept, d_comp in dept_compliance.items():
+            cnt = d_comp["active_headcount"]
+            tot_v = d_comp["total_violations"]
+            crit = d_comp["critical_count"]
+            # Departman uyum puanı
+            dept_penalty = (crit * 3.0) + ((tot_v - crit) * 1.5)
+            d_comp["compliance_score"] = max(20.0, round(100.0 - (dept_penalty / max(cnt, 1) * 20.0), 1))
+            if d_comp["compliance_score"] < 70.0 or crit >= 3:
+                d_comp["risk_level"] = "YÜKSEK"
+            elif d_comp["compliance_score"] < 85.0 or tot_v >= 5:
+                d_comp["risk_level"] = "ORTA"
+            else:
+                d_comp["risk_level"] = "DÜŞÜK"
+
+        sorted_dept_compliance = sorted(dept_compliance.values(), key=lambda x: (x["critical_count"], x["total_violations"]), reverse=True)
+
+        # ---------------------------------------------------------------------
+        # FABRİKA YASAL UYUM ENDEKSİ (LEGAL COMPLIANCE INDEX)
+        # ---------------------------------------------------------------------
+        critical_total = sum(1 for v in all_violations if v["severity"] == "CRITICAL")
+        warning_total = len(all_violations) - critical_total
+        
+        # Ceza puanı hesabı: Kritik ihlaller 0.6 puan, Uyarılar 0.2 puan kırar
+        penalty = (critical_total * 0.5) + (warning_total * 0.15)
+        compliance_index = max(10.0, round(100.0 - penalty, 1))
+        
+        if compliance_index >= 90.0:
+            risk_status = "DÜŞÜK RİSK"
+            risk_desc = "Fabrika geneli yasal uyum yüksek, teftiş riski asgari düzeyde."
+        elif compliance_index >= 75.0:
+            risk_status = "ORTA RİSK"
+            risk_desc = "Vardiya geçişleri ve hafta tatillerinde düzeltici tedbir alınmalı."
+        else:
+            risk_status = "YÜKSEK RİSK"
+            risk_desc = "İş müfettişi denetimlerinde idari para cezası ve İSG kusur riski yüksek."
+
+        # Ciddiyete göre sıralı tüm ihlaller (Kritikler en başta)
+        all_violations.sort(key=lambda x: (0 if x["severity"] == "CRITICAL" else 1, x["start_day"], x["ad_soyad"]))
+
+        return {
+            "summary": {
+                "compliance_index": compliance_index,
+                "risk_status": risk_status,
+                "risk_description": risk_desc,
+                "total_violations": len(all_violations),
+                "critical_violations": critical_total,
+                "warning_violations": warning_total,
+                "rest_violations_count": len(rest_violations),
+                "consecutive_work_count": len(consecutive_violations),
+                "overtime_limit_count": len(overtime_risks),
+                "inspected_personnel": len(active_matrix),
+                "highest_risk_department": sorted_dept_compliance[0]["department"] if sorted_dept_compliance else "-"
+            },
+            "department_compliance": sorted_dept_compliance,
+            "violations": all_violations,
+            "rest_violations": rest_violations,
+            "consecutive_violations": consecutive_violations,
+            "overtime_risks": overtime_risks
+        }

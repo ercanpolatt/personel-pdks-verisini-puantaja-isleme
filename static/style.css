@@ -1525,3 +1525,197 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   LEGAL COMPLIANCE & RISK RADAR STYLES (4857 SAYILI İŞ KANUNU)
+   ========================================================================== */
+.compliance-insights-banner {
+  background: linear-gradient(135deg, rgba(24, 18, 30, 0.95) 0%, rgba(30, 24, 40, 0.9) 100%);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  border-left: 4px solid var(--color-danger);
+  border-radius: var(--radius-lg);
+  padding: 18px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 24px -6px rgba(244, 63, 94, 0.15);
+}
+
+.compliance-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #fb7185;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+}
+
+.compliance-banner-header .insight-icon {
+  width: 18px;
+  height: 18px;
+  color: #f43f5e;
+}
+
+/* Department Compliance List */
+.dept-compliance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dept-compliance-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.dept-compliance-card:hover {
+  border-color: rgba(244, 63, 94, 0.3);
+  transform: translateY(-1px);
+}
+
+.dept-compliance-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dept-compliance-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dept-compliance-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.comp-tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+}
+
+.comp-tag.tag-alert {
+  background: rgba(244, 63, 94, 0.15);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  font-weight: 600;
+}
+
+.dept-compliance-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dept-score-box {
+  text-align: right;
+}
+
+.dept-score-val {
+  font-size: 15px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: #ffffff;
+}
+
+.dept-score-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Compliance Risk Summary Box */
+.compliance-risk-summary-box {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.risk-article-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.risk-article-item.risk-high {
+  border-left: 3px solid var(--color-danger);
+}
+
+.risk-article-item.risk-medium {
+  border-left: 3px solid var(--color-warning);
+}
+
+.risk-article-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.risk-article-head strong {
+  font-size: 13px;
+  color: #ffffff;
+}
+
+.risk-fine-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fb7185;
+  background: rgba(244, 63, 94, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.risk-article-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.seg-badge {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  margin-left: 4px;
+}
+
+.seg-btn.active .seg-badge {
+  background: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.badge-critical {
+  background: rgba(244, 63, 94, 0.15);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  font-weight: 700;
+  font-size: 11px;
+}

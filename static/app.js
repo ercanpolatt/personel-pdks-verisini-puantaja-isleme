@@ -54,6 +54,20 @@ const AppState = {
     totalCount: 0,
     items: [],
     departments: []
+  },
+
+  // Yasal Uyum & Risk Radarı Durumu
+  compliance: {
+    page: 1,
+    pageSize: 50,
+    search: '',
+    department: 'all',
+    violationType: 'all',
+    severity: 'all',
+    totalPages: 1,
+    totalCount: 0,
+    items: [],
+    departments: []
   }
 };
 
@@ -149,6 +163,7 @@ function switchTab(tabId) {
   if (tabId === 'tab-exceptions') loadExceptions();
   if (tabId === 'tab-bonuses') loadBonuses();
   if (tabId === 'tab-financial') loadFinancialRadar();
+  if (tabId === 'tab-compliance') loadComplianceRadar();
   if (tabId === 'tab-reports') loadRules();
 }
 
@@ -200,6 +215,12 @@ async function loadStats() {
     if (badgeFin && data.financial_summary) {
       const otM = (data.financial_summary.total_overtime_cost / 1000000).toFixed(2).replace('.', ',');
       badgeFin.innerText = `₺${otM}M`;
+    }
+
+    const badgeComp = document.getElementById('badgeComplianceScore');
+    if (badgeComp && data.compliance_summary) {
+      const score = Math.round(data.compliance_summary.compliance_index);
+      badgeComp.innerText = `%${score}`;
     }
 
     // 30 Günlük Grafik & Departman Dağılımını Çiz
@@ -899,7 +920,269 @@ function populateFinancialDeptDropdown(departments) {
 }
 
 // ----------------------------------------------------------------------------
-// 6. RAPOR MERKEZİ & AYARLAR (RULES & REPORTS)
+// 6. YASAL UYUM & RİSK RADARI (LEGAL COMPLIANCE RADAR - 4857 SAYILI İŞ KANUNU)
+// ----------------------------------------------------------------------------
+async function loadComplianceRadar() {
+  const tbody = document.getElementById('complianceTableBody');
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 40px; color: var(--text-dim);">Yasal uyum ve risk verileri analiz ediliyor...</td></tr>`;
+  }
+
+  try {
+    const params = new URLSearchParams({
+      page: AppState.compliance.page,
+      page_size: AppState.compliance.pageSize,
+      violation_type: AppState.compliance.violationType,
+      severity: AppState.compliance.severity,
+      department: AppState.compliance.department,
+      search: AppState.compliance.search
+    });
+
+    const res = await fetch(`/api/compliance-radar?${params.toString()}`);
+    if (!res.ok) throw new Error('Yasal uyum verileri alınamadı');
+    const data = await res.json();
+
+    AppState.compliance.items = data.items;
+    AppState.compliance.totalCount = data.total_count;
+    AppState.compliance.totalPages = data.total_pages;
+
+    // 1. KPI Kartları
+    const s = data.summary;
+    const valComp = document.getElementById('valComplianceScore');
+    if (valComp) valComp.innerText = `%${s.compliance_index.toFixed(1).replace('.', ',')}`;
+
+    const subRisk = document.getElementById('subComplianceRisk');
+    if (subRisk) subRisk.innerText = `${s.risk_status} (${s.total_violations} Toplam İhlal)`;
+
+    const valRest = document.getElementById('valRestViolations');
+    if (valRest) valRest.innerHTML = `${fmtInt(s.rest_violations_count)} <small>olay</small>`;
+
+    const valConsec = document.getElementById('valConsecutiveViolations');
+    if (valConsec) valConsec.innerHTML = `${fmtInt(s.consecutive_work_count)} <small>dönem</small>`;
+
+    const valOtRisk = document.getElementById('valOvertimeRisks');
+    if (valOtRisk) valOtRisk.innerHTML = `${fmtInt(s.overtime_limit_count)} <small>kişi</small>`;
+
+    // Segmented Filtre Rozetleri
+    const badgeAll = document.getElementById('badgeCompCountAll');
+    if (badgeAll) badgeAll.innerText = fmtInt(s.total_violations);
+
+    const badgeRest = document.getElementById('badgeCompCountRest');
+    if (badgeRest) badgeRest.innerText = fmtInt(s.rest_violations_count);
+
+    const badgeConsec = document.getElementById('badgeCompCountConsecutive');
+    if (badgeConsec) badgeConsec.innerText = fmtInt(s.consecutive_work_count);
+
+    const badgeOt = document.getElementById('badgeCompCountOt');
+    if (badgeOt) badgeOt.innerText = fmtInt(s.overtime_limit_count);
+
+    // Navbar Rozeti
+    const badgeNav = document.getElementById('badgeComplianceScore');
+    if (badgeNav) badgeNav.innerText = `%${Math.round(s.compliance_index)}`;
+
+    // 2. Departman Dağılım Kartları
+    renderDeptComplianceList(data.department_compliance);
+
+    // 3. İdari Risk ve Para Cezası Özeti
+    renderComplianceRiskSummary(s, data.department_compliance);
+
+    // 4. İhlal Denetim Tablosu
+    renderComplianceTable(data.items, (data.page - 1) * data.page_size);
+
+    // 5. Sayfalama
+    renderCompliancePagination(data);
+
+    // 6. Departman Filtre Dropdown
+    populateComplianceDeptDropdown(data.departments);
+
+  } catch (err) {
+    console.error(err);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color: var(--color-danger); padding: 30px;">Hata: ${err.message}</td></tr>`;
+    }
+  }
+}
+
+function renderDeptComplianceList(depts) {
+  const container = document.getElementById('deptComplianceListContainer');
+  if (!container || !depts) return;
+
+  let html = '';
+  depts.slice(0, 8).forEach(d => {
+    let riskTag = '<span class="dept-badge-tag tag-normal">Düşük Risk</span>';
+    if (d.risk_level === 'YÜKSEK') {
+      riskTag = '<span class="dept-badge-tag tag-critical">🚨 Yüksek Risk</span>';
+    } else if (d.risk_level === 'ORTA') {
+      riskTag = '<span class="dept-badge-tag tag-high">⚠️ Orta Risk</span>';
+    }
+
+    html += `
+      <div class="dept-compliance-card">
+        <div class="dept-comp-header">
+          <div class="dept-comp-name">
+            <strong>${d.department}</strong>
+            <small style="color: var(--text-dim); margin-left: 6px;">(${d.active_headcount} çalışan)</small>
+          </div>
+          <div class="dept-comp-badge-group">
+            <span class="dept-comp-score" style="font-weight: 700; color: ${d.compliance_score < 70 ? 'var(--color-danger)' : d.compliance_score < 85 ? 'var(--color-amber)' : 'var(--color-emerald)'};">Uyum: %${d.compliance_score.toFixed(1).replace('.', ',')}</span>
+            ${riskTag}
+          </div>
+        </div>
+        <div class="dept-comp-stats">
+          <span class="stat-pill"><small>11s Dinlenme:</small> <strong>${d.rest_count}</strong></span>
+          <span class="stat-pill"><small>Hafta Tatili:</small> <strong>${d.consecutive_count}</strong></span>
+          <span class="stat-pill"><small>270s FM Riski:</small> <strong>${d.ot_risk_count}</strong></span>
+          <span class="stat-pill" style="border-color: rgba(239,68,68,0.3);"><small style="color:var(--color-danger)">Kritik:</small> <strong style="color:var(--color-danger)">${d.critical_count}</strong></span>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function renderComplianceRiskSummary(s, depts) {
+  const container = document.getElementById('complianceRiskSummaryContainer');
+  if (!container || !s) return;
+
+  const topRiskDept = s.highest_risk_department || 'Balık Temizleme';
+
+  const html = `
+    <div class="risk-article-item">
+      <div class="risk-article-header">
+        <div class="risk-article-title">
+          <span class="risk-law-ref">4857 SK Md. 68 & Postalar Yön.</span>
+          <strong>11 Saat Kesintisiz Dinlenme Kuralı</strong>
+        </div>
+        <span class="risk-fine-badge badge-critical">${s.rest_violations_count} Vaka Tespit</span>
+      </div>
+      <p class="risk-article-desc">
+        Vardiya değişiminde iki çalışma arası dinlenmenin 11 saatten az olması doğrudan işverenin ağır kusuru sayılır. Olası bir iş kazasında SGK rücu davaları açılır ve kişi başı idari para cezası kesilir.
+      </p>
+    </div>
+
+    <div class="risk-article-item">
+      <div class="risk-article-header">
+        <div class="risk-article-title">
+          <span class="risk-law-ref">4857 SK Md. 46</span>
+          <strong>7+ Gün Aralıksız Çalışma (Hafta Tatili Gaspı)</strong>
+        </div>
+        <span class="risk-fine-badge badge-warning">${s.consecutive_work_count} Dönem Tespit</span>
+      </div>
+      <p class="risk-article-desc">
+        6 iş günü çalışan personele 7 günlük zaman diliminde kesintisiz 24 saat hafta tatili verilmesi amir hükmüdür. 7+ gün tatilsiz çalışma işçiye kıdem tazminatlı haklı fesih hakkı doğurur.
+      </p>
+    </div>
+
+    <div class="risk-article-item">
+      <div class="risk-article-header">
+        <div class="risk-article-title">
+          <span class="risk-law-ref">4857 SK Md. 41</span>
+          <strong>Yıllık 270 Saat Fazla Mesai Tavanı</strong>
+        </div>
+        <span class="risk-fine-badge badge-critical">${s.overtime_limit_count} Riskli Personel</span>
+      </div>
+      <p class="risk-article-desc">
+        İşçinin yazılı onayı olsa dahi yılda 270 saat fazla mesai tavanı aşılamaz. Eylül ayında tek başına 35-50+ saat mesaiye ulaşan çalışanlar için acil vardiya rotasyonu şarttır.
+      </p>
+    </div>
+
+    <div class="risk-summary-footer" style="padding: 12px 14px; background: rgba(239, 68, 68, 0.08); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2); margin-top: 10px;">
+      <div style="font-size: 12px; font-weight: 700; color: var(--color-danger); display: flex; align-items: center; gap: 6px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>En Yüksek Teftiş Riski: <strong>${topRiskDept}</strong></span>
+      </div>
+      <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+        Toplam ${s.total_violations} yasal uygunsuzluktan ${s.critical_violations} tanesi KRİTİK seviyededir. Teftişe karşı yukarıdaki Excel Teftiş Raporunu indirip inceleyebilirsiniz.
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+function renderComplianceTable(items, startIdx) {
+  const tbody = document.getElementById('complianceTableBody');
+  if (!tbody) return;
+
+  if (items.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 40px; color: var(--text-dim);">Arama ve filtre kriterlerine uygun ihlal kaydı bulunamadı.</td></tr>`;
+    return;
+  }
+
+  let html = '';
+  items.forEach((v, idx) => {
+    let typeBadge = '';
+    if (v.violation_type === 'REST_11H') {
+      typeBadge = '<span class="badge badge-warning">11s Dinlenme</span>';
+    } else if (v.violation_type === 'CONSECUTIVE_7D') {
+      typeBadge = '<span class="badge badge-purple">Hafta Tatili</span>';
+    } else if (v.violation_type === 'OVERTIME_270H') {
+      typeBadge = '<span class="badge badge-cyan">270s FM Riski</span>';
+    }
+
+    const sevBadge = v.severity === 'CRITICAL'
+      ? '<span class="badge badge-critical" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); font-weight:700;">🚨 KRİTİK</span>'
+      : '<span class="badge badge-warning" style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3); font-weight:600;">⚠️ UYARI</span>';
+
+    html += `
+      <tr>
+        <td>${startIdx + idx + 1}</td>
+        <td class="cell-mono">${v.tc || '-'}</td>
+        <td class="cell-bold">${v.ad_soyad}</td>
+        <td>${v.bolum}</td>
+        <td>${typeBadge}</td>
+        <td style="text-align: center;" class="cell-mono">${v.date_str}</td>
+        <td style="text-align: center; font-weight: 700;" class="cell-mono">${v.metric_value}</td>
+        <td style="text-align: center; color: var(--text-muted); font-size: 11px;">${v.legal_limit}</td>
+        <td style="text-align: center;">${sevBadge}</td>
+        <td class="cell-mono" style="font-size: 11px; color: var(--color-cyan);">${v.legal_article}</td>
+        <td style="font-size: 11.5px; color: var(--text-muted);">${v.detail}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function renderCompliancePagination(data) {
+  const info = document.getElementById('compliancePaginationInfo');
+  if (info) {
+    const start = data.total_count === 0 ? 0 : (data.page - 1) * data.page_size + 1;
+    const end = Math.min(data.page * data.page_size, data.total_count);
+    info.innerText = `Gösterilen: ${start} - ${end} / ${data.total_count} İhlal Kaydı`;
+  }
+
+  const disp = document.getElementById('compliancePageDisplay');
+  if (disp) {
+    disp.innerText = `Sayfa ${data.page} / ${data.total_pages || 1}`;
+  }
+
+  const btnPrev = document.getElementById('btnCompliancePrev');
+  if (btnPrev) btnPrev.disabled = data.page <= 1;
+
+  const btnNext = document.getElementById('btnComplianceNext');
+  if (btnNext) btnNext.disabled = data.page >= data.total_pages;
+}
+
+function populateComplianceDeptDropdown(departments) {
+  const select = document.getElementById('complianceDeptFilter');
+  if (!select || select.dataset.loaded === 'true' || !departments) return;
+
+  let current = select.value;
+  let html = '<option value="all">Tüm Bölümler</option>';
+  departments.forEach(dept => {
+    html += `<option value="${dept}">${dept}</option>`;
+  });
+  select.innerHTML = html;
+  select.value = current;
+  select.dataset.loaded = 'true';
+}
+
+// ----------------------------------------------------------------------------
+// 7. RAPOR MERKEZİ & AYARLAR (RULES & REPORTS)
 // ----------------------------------------------------------------------------
 async function loadRules() {
   try {
@@ -1285,6 +1568,67 @@ document.addEventListener('DOMContentLoaded', () => {
       if (AppState.financial.page < AppState.financial.totalPages) {
         AppState.financial.page++;
         loadFinancialRadar();
+      }
+    });
+  }
+
+  // 7. Yasal Uyum & Risk Radarı Filtreleri ve Sayfalama
+  const compSegmented = document.getElementById('compTypeSegmented');
+  if (compSegmented) {
+    compSegmented.querySelectorAll('.seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        compSegmented.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        AppState.compliance.violationType = btn.getAttribute('data-type') || 'all';
+        AppState.compliance.page = 1;
+        loadComplianceRadar();
+      });
+    });
+  }
+
+  const compSearch = document.getElementById('complianceSearchInput');
+  if (compSearch) {
+    compSearch.addEventListener('input', debounce((e) => {
+      AppState.compliance.search = e.target.value;
+      AppState.compliance.page = 1;
+      loadComplianceRadar();
+    }, 300));
+  }
+
+  const compDept = document.getElementById('complianceDeptFilter');
+  if (compDept) {
+    compDept.addEventListener('change', (e) => {
+      AppState.compliance.department = e.target.value;
+      AppState.compliance.page = 1;
+      loadComplianceRadar();
+    });
+  }
+
+  const compSeverity = document.getElementById('complianceSeverityFilter');
+  if (compSeverity) {
+    compSeverity.addEventListener('change', (e) => {
+      AppState.compliance.severity = e.target.value;
+      AppState.compliance.page = 1;
+      loadComplianceRadar();
+    });
+  }
+
+  const btnCompPrev = document.getElementById('btnCompliancePrev');
+  if (btnCompPrev) {
+    btnCompPrev.addEventListener('click', () => {
+      if (AppState.compliance.page > 1) {
+        AppState.compliance.page--;
+        loadComplianceRadar();
+      }
+    });
+  }
+
+  const btnCompNext = document.getElementById('btnComplianceNext');
+  if (btnCompNext) {
+    btnCompNext.addEventListener('click', () => {
+      if (AppState.compliance.page < AppState.compliance.totalPages) {
+        AppState.compliance.page++;
+        loadComplianceRadar();
       }
     });
   }
