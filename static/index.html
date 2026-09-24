@@ -384,6 +384,15 @@
               <option value="500">Tümü (500)</option>
             </select>
           </div>
+
+          <button type="button" class="btn btn-secondary btn-sm" id="btnMatrixBulkSlips" style="margin-left: 8px;">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+            <span>Toplu Pusula Yazdır (A4)</span>
+          </button>
         </div>
       </div>
 
@@ -968,6 +977,21 @@
             </div>
 
             <div class="download-cards-list">
+              <div class="download-item" style="border: 1px solid rgba(14, 165, 233, 0.35); background: rgba(14, 165, 233, 0.04);">
+                <div class="download-icon" style="background: rgba(14, 165, 233, 0.15); color: #0284c7;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 6 2 18 2 18 9"/>
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                    <rect x="6" y="14" width="12" height="8"/>
+                  </svg>
+                </div>
+                <div class="download-info">
+                  <strong style="color: #38bdf8;">Aylık Personel Mutabakat Pusulaları (Yazdırılabilir A4 / PDF)</strong>
+                  <span>4857 Sayılı Kanun'a uygun, işçi ve işveren çift ıslak imza alanlı, matbu tekil ve toplu A4 fişler</span>
+                </div>
+                <a href="/api/slips/bulk" target="_blank" class="btn btn-sm btn-primary">Toplu Pusula Aç & Yazdır (A4)</a>
+              </div>
+
               <div class="download-item">
                 <div class="download-icon icon-excel">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1291,7 +1315,15 @@
           </table>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-primary" id="btnModalPrintSlip">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          <span>Aylık Pusulayı Yazdır / PDF (A4)</span>
+        </button>
         <button type="button" class="btn btn-outline" onclick="closeModal('modalPersonnelPunches')">Kapat</button>
       </div>
     </div>

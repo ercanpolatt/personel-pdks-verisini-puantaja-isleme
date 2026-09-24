@@ -1330,6 +1330,11 @@ async function openPersonnelPunchesModal(nameKey) {
     if (title) title.innerText = p.ad_soyad;
     if (meta) meta.innerText = `TC: ${p.tc || '-'} | Sicil: ${p.sicil || '-'} | Bölüm: ${p.bolum || '-'}`;
 
+    const btnPrint = document.getElementById('btnModalPrintSlip');
+    if (btnPrint) {
+      btnPrint.onclick = () => window.open(`/api/slips/${encodeURIComponent(nameKey)}`, '_blank');
+    }
+
     let html = '';
     data.days.forEach(d => {
       const isSun = d.status_type === 'TATİL';
@@ -1439,6 +1444,14 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.matrix.pageSize = parseInt(e.target.value);
       AppState.matrix.page = 1;
       loadMatrix();
+    });
+  }
+
+  const btnMatrixSlips = document.getElementById('btnMatrixBulkSlips');
+  if (btnMatrixSlips) {
+    btnMatrixSlips.addEventListener('click', () => {
+      const dept = AppState.matrix.department || 'all';
+      window.open(`/api/slips/bulk?department=${encodeURIComponent(dept)}`, '_blank');
     });
   }
 

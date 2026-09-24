@@ -13,12 +13,13 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Body, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from pdks_engine import PDKSEngine, fmt_hours_tr, norm_name_key
+from pdks_engine import PDKSEngine, fmt_hours_tr, norm_name_key, clean_display_text
+from slip_builder import generate_single_slip_html, render_slips_document
 
 def _clean_str(val: Any) -> Optional[str]:
     if val is None or not isinstance(val, str):
@@ -772,6 +773,169 @@ def get_personnel_punches(name_key: str):
         "personnel": person,
         "days": days_data
     }
+
+@app.get("/api/slips/bulk", response_class=HTMLResponse)
+def get_bulk_slips(
+    department: Optional[str] = Query("all"),
+    status: Optional[str] = Query("active"),
+    search: Optional[str] = Query(None),
+    auto_print: bool = Query(False)
+):
+    """Tüm fabrika veya seçilen departman için A4 matbu mutabakat pusulaları üretir."""
+    if hasattr(department, 'default'):
+        department = department.default
+    if hasattr(status, 'default'):
+        status = status.default
+    if hasattr(search, 'default'):
+        search = search.default
+    if hasattr(auto_print, 'default'):
+        auto_print = auto_print.default
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    rows = mgr.matrix
+
+    dept_val = _clean_str(department)
+    status_val = _clean_str(status) or "active"
+    search_val = _clean_str(search)
+
+    filtered = rows
+    if status_val == "active":
+        filtered = [r for r in filtered if r["total_work_days"] > 0]
+    elif status_val == "inactive":
+        filtered = [r for r in filtered if r["total_work_days"] == 0]
+
+    if dept_val and dept_val != "all":
+        filtered = [r for r in filtered if r.get("bolum") == dept_val]
+
+    if search_val:
+        filtered = [
+            r for r in filtered
+            if _matches_search(r["ad_soyad"], search_val)
+            or _matches_search(str(r.get("tc", "")), search_val)
+            or _matches_search(str(r.get("bolum", "")), search_val)
+        ]
+
+    slips_html = []
+    for m in filtered:
+        name_k = m["name_key"]
+        p_info = eng.personnel_by_key.get(name_k) or {
+            "ad_soyad": m["ad_soyad"],
+            "tc": m.get("tc", ""),
+            "sno": m.get("sno", ""),
+            "bolum": m.get("bolum", ""),
+            "durumu": "MEVSİMLİK",
+            "sgk_giris": ""
+        }
+        days_data = []
+        for d in range(1, eng.days_in_month + 1):
+            rec = eng.daily_results.get((name_k, d))
+            if rec and rec.get("raw_g_saat") != "-":
+                days_data.append(rec)
+            else:
+                days_data.append({
+                    "gun": d,
+                    "tarih": f"{d:02d}.{eng.target_month:02d}.{eng.target_year}",
+                    "gun_adi": "Pazar" if d in eng.sundays else "",
+                    "raw_g_saat": "-",
+                    "raw_c_saat": "-",
+                    "all_punches": "-",
+                    "fiili_sure": 0.0,
+                    "break_hours": 0.0,
+                    "base_hours": 0.0,
+                    "overtime_hours": 0.0,
+                    "bonus_hours": 0.0,
+                    "final_hours": 0.0,
+                    "status_type": "TATİL" if d in eng.sundays else "ÇALIŞMADI",
+                    "audit_note": "Hafta Tatili" if d in eng.sundays else ""
+                })
+
+        slip = generate_single_slip_html(
+            person=p_info,
+            summary=m,
+            days_data=days_data,
+            month=eng.target_month,
+            year=eng.target_year,
+            sundays=eng.sundays
+        )
+        slips_html.append(slip)
+
+    title = f"Toplu Personel Puantaj Fişleri ({len(filtered)} Kişi)"
+    if dept_val and dept_val != "all":
+        title = f"{dept_val} — Personel Puantaj Fişleri ({len(filtered)} Kişi)"
+
+    doc = render_slips_document(
+        slips_html_list=slips_html,
+        title=title,
+        period_str=f"{eng.target_month:02d}.{eng.target_year}",
+        auto_print=bool(auto_print)
+    )
+    return HTMLResponse(content=doc, status_code=200)
+
+
+@app.get("/api/slips/{name_key}", response_class=HTMLResponse)
+def get_single_slip(
+    name_key: str,
+    auto_print: bool = Query(False)
+):
+    """Tek bir personel için A4 matbu çalışma ve fazla mesai mutabakat pusulası döner."""
+    if hasattr(auto_print, 'default'):
+        auto_print = auto_print.default
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+
+    person = next((p for p in eng.personnel_list if p["name_key"] == name_key), None)
+    if not person:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+    summary = next((m for m in mgr.matrix if m["name_key"] == name_key), {
+        "total_work_days": 0,
+        "total_hours": 0.0,
+        "total_base_hours": 0.0,
+        "total_ot_hours": 0.0,
+        "total_bonus_hours": 0.0
+    })
+
+    days_data = []
+    for d in range(1, eng.days_in_month + 1):
+        rec = eng.daily_results.get((name_key, d))
+        if rec and rec.get("raw_g_saat") != "-":
+            days_data.append(rec)
+        else:
+            days_data.append({
+                "gun": d,
+                "tarih": f"{d:02d}.{eng.target_month:02d}.{eng.target_year}",
+                "gun_adi": "Pazar" if d in eng.sundays else "",
+                "raw_g_saat": "-",
+                "raw_c_saat": "-",
+                "all_punches": "-",
+                "fiili_sure": 0.0,
+                "break_hours": 0.0,
+                "base_hours": 0.0,
+                "overtime_hours": 0.0,
+                "bonus_hours": 0.0,
+                "final_hours": 0.0,
+                "status_type": "TATİL" if d in eng.sundays else "ÇALIŞMADI",
+                "audit_note": "Hafta Tatili" if d in eng.sundays else ""
+            })
+
+    slip = generate_single_slip_html(
+        person=person,
+        summary=summary,
+        days_data=days_data,
+        month=eng.target_month,
+        year=eng.target_year,
+        sundays=eng.sundays
+    )
+
+    doc = render_slips_document(
+        slips_html_list=[slip],
+        title=f"{clean_display_text(person.get('ad_soyad', ''))} — Aylık Puantaj Fişi",
+        period_str=f"{eng.target_month:02d}.{eng.target_year}",
+        auto_print=bool(auto_print)
+    )
+    return HTMLResponse(content=doc, status_code=200)
 
 @app.get("/api/exceptions")
 def get_exceptions(
