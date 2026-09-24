@@ -45,6 +45,17 @@
         <span class="status-dot pulse-green"></span>
         <span class="status-label" id="statusLabel">PDKS Motoru Aktif (500 Personel)</span>
       </div>
+
+      <!-- Active User Profile Pill & Quick Role Switcher Trigger -->
+      <div class="user-profile-pill" id="userProfileBtn" title="Kullanıcı Rolü & Profil Değiştir (RBAC)">
+        <div class="user-avatar" id="headerUserAvatar">🛡️</div>
+        <div class="user-info">
+          <span class="user-name" id="headerUserName">Sistem Yöneticisi</span>
+          <span class="user-role-badge" id="headerUserRole">Admin</span>
+        </div>
+        <svg class="user-dropdown-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+
       <button class="btn btn-primary" id="btnHeaderGenerate">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10"/>
@@ -1399,6 +1410,47 @@
           <span>Aylık Pusulayı Yazdır / PDF (A4)</span>
         </button>
         <button type="button" class="btn btn-outline" onclick="closeModal('modalPersonnelPunches')">Kapat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: ROL BAZLI KULLANICI & ERİŞİM DEĞİŞTİRİCİ (RBAC)                    -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalRoleSwitcher">
+    <div class="modal-dialog" style="max-width: 680px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">🔐</span>
+          <div>
+            <h3 class="modal-title" style="margin-bottom: 2px;">Rol ve Kullanıcı Değiştirici (RBAC)</h3>
+            <div style="font-size: 11.5px; color: var(--text-muted);">Fabrika yetki profillerini anında simüle edin veya şifreli giriş yapın</div>
+          </div>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalRoleSwitcher')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <div class="role-switcher-grid" id="roleSwitcherGrid">
+          <!-- Role cards dynamically injected by JS -->
+        </div>
+
+        <div style="margin: 22px 0 16px; text-align: center; position: relative;">
+          <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 0;">
+          <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: var(--bg-surface); padding: 0 12px; font-size: 10.5px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">VEYA KULLANICI ADIYLA GİRİŞ</span>
+        </div>
+
+        <form id="formCustomLogin" style="display: flex; gap: 10px; align-items: flex-end; margin-top: 8px;">
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="loginUsername">Kullanıcı Adı</label>
+            <input type="text" id="loginUsername" class="form-input" placeholder="örn. ik_yonetici, muhasebe..." required>
+          </div>
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="loginPassword">Şifre</label>
+            <input type="password" id="loginPassword" class="form-input" placeholder="Demo: 123" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="height: 38px; white-space: nowrap;">Giriş Yap</button>
+        </form>
       </div>
     </div>
   </div>

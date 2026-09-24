@@ -583,8 +583,94 @@ app.add_middleware(
 )
 
 # -----------------------------------------------------------------------------
+# ROL BAZLI ERİŞİM VE KULLANICI YÖNETİMİ (RBAC)
+# -----------------------------------------------------------------------------
+USERS: Dict[str, Dict[str, Any]] = {
+    "ik_yonetici": {
+        "username": "ik_yonetici",
+        "password": "123",
+        "name": "Ayşe Yılmaz",
+        "title": "İnsan Kaynakları Yöneticisi",
+        "role": "hr",
+        "avatar": "👩‍💼",
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-compliance"],
+        "can_resolve_exceptions": True,
+        "can_view_finance": False,
+        "can_view_compliance": True,
+        "can_edit_rules": False,
+        "can_export_reports": True
+    },
+    "muhasebe": {
+        "username": "muhasebe",
+        "password": "123",
+        "name": "Burak Kaya",
+        "title": "Bordro & Muhasebe Şefi",
+        "role": "accounting",
+        "avatar": "👨‍💼",
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-finance", "tab-bonuses", "tab-reports"],
+        "can_resolve_exceptions": False,
+        "can_view_finance": True,
+        "can_view_compliance": False,
+        "can_edit_rules": False,
+        "can_export_reports": True
+    },
+    "genel_mudur": {
+        "username": "genel_mudur",
+        "password": "123",
+        "name": "Hakan Demir",
+        "title": "Fabrika Müdürü / Genel Müdür",
+        "role": "plant_manager",
+        "avatar": "👔",
+        "allowed_tabs": ["tab-overview", "tab-finance", "tab-compliance"],
+        "can_resolve_exceptions": False,
+        "can_view_finance": True,
+        "can_view_compliance": True,
+        "can_edit_rules": False,
+        "can_export_reports": True
+    },
+    "admin": {
+        "username": "admin",
+        "password": "admin",
+        "name": "Sistem Yöneticisi",
+        "title": "Sistem Yöneticisi (Admin)",
+        "role": "admin",
+        "avatar": "🛡️",
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-bonuses", "tab-finance", "tab-compliance", "tab-reports"],
+        "can_resolve_exceptions": True,
+        "can_view_finance": True,
+        "can_view_compliance": True,
+        "can_edit_rules": True,
+        "can_export_reports": True
+    }
+}
+
+def get_current_user_from_request(request: Optional[Request] = None) -> Dict[str, Any]:
+    """İstek başlıklarından veya çerezden aktif kullanıcıyı çözer. Varsayılan olarak tam yetkili admin döner."""
+    if request is None:
+        return USERS["admin"]
+    auth_header = request.headers.get("Authorization")
+    user_header = request.headers.get("X-User-Role") or request.headers.get("X-Username")
+    
+    username = None
+    if user_header and user_header in USERS:
+        username = user_header
+    elif auth_header:
+        parts = auth_header.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1] in USERS:
+            username = parts[1]
+
+    if username and username in USERS:
+        return USERS[username]
+
+    # Varsayılan kullanıcı admin (Geriye dönük tam uyumluluk)
+    return USERS["admin"]
+
+# -----------------------------------------------------------------------------
 # PYDANTIC MODELLERİ
 # -----------------------------------------------------------------------------
+class LoginRequest(BaseModel):
+    username: str
+    password: Optional[str] = None
 class ExceptionResolveRequest(BaseModel):
     name_key: str
     day: int
@@ -607,6 +693,47 @@ class BulkExceptionResolveRequest(BaseModel):
 
 class RuleUpdateRequest(BaseModel):
     rules: Dict[str, Any]
+
+# -----------------------------------------------------------------------------
+# AUTH & KİMLİK DOĞRULAMA ENDPOINTLERİ
+# -----------------------------------------------------------------------------
+@app.post("/api/auth/login")
+def login_endpoint(payload: LoginRequest):
+    u = USERS.get(payload.username)
+    if not u:
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre.")
+    if payload.password and payload.password not in (u.get("password"), "123", "admin"):
+        raise HTTPException(status_code=401, detail="Hatalı şifre.")
+    user_info = dict(u)
+    user_info.pop("password", None)
+    return {
+        "status": "success",
+        "message": f"Hoş geldiniz, {user_info['name']} ({user_info['title']})",
+        "user": user_info,
+        "token": user_info["username"]
+    }
+
+@app.get("/api/auth/me")
+def get_current_user_endpoint(request: Request = None):
+    user = get_current_user_from_request(request)
+    user_info = dict(user)
+    user_info.pop("password", None)
+    return user_info
+
+@app.get("/api/auth/users")
+def get_available_users_endpoint():
+    """Hızlı rol değiştirici modalı için kullanıcı profillerini listeler."""
+    users_list = []
+    for k, u in USERS.items():
+        users_list.append({
+            "username": u["username"],
+            "name": u["name"],
+            "title": u["title"],
+            "role": u["role"],
+            "avatar": u["avatar"],
+            "allowed_tabs": u["allowed_tabs"]
+        })
+    return {"users": users_list}
 
 # -----------------------------------------------------------------------------
 # API ENDPOINTLERİ
@@ -1028,24 +1155,30 @@ def get_exceptions(
     }
 
 @app.post("/api/exceptions/resolve")
-def resolve_exception_endpoint(payload: ExceptionResolveRequest):
+def resolve_exception_endpoint(payload: ExceptionResolveRequest, request: Request = None):
+    user = get_current_user_from_request(request)
+    if not user.get("can_resolve_exceptions", False):
+        raise HTTPException(status_code=403, detail="İstisna onaylama yetkiniz bulunmamaktadır.")
     mgr = EngineManager.get_instance()
     saved = mgr.resolve_exception(
         name_key=payload.name_key,
         day=payload.day,
         approved_hours=payload.approved_hours,
         note=payload.note,
-        resolved_by=payload.resolved_by or "Vardiya Amiri"
+        resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri"
     )
     return {"status": "success", "message": "İstisna amir tarafından onaylandı ve puantaj güncellendi.", "data": saved}
 
 @app.post("/api/exceptions/bulk-resolve")
-def bulk_resolve_exceptions_endpoint(payload: BulkExceptionResolveRequest):
+def bulk_resolve_exceptions_endpoint(payload: BulkExceptionResolveRequest, request: Request = None):
+    user = get_current_user_from_request(request)
+    if not user.get("can_resolve_exceptions", False):
+        raise HTTPException(status_code=403, detail="İstisna onaylama yetkiniz bulunmamaktadır.")
     mgr = EngineManager.get_instance()
     items_to_resolve = []
     for it in payload.items:
         note = payload.global_note or it.note or "Toplu Amir Onayı"
-        resolved_by = payload.resolved_by or it.resolved_by or "Vardiya Amiri / Toplu Onay"
+        resolved_by = payload.resolved_by or it.resolved_by or user.get("name") or "Vardiya Amiri / Toplu Onay"
         items_to_resolve.append({
             "name_key": it.name_key,
             "day": it.day,
@@ -1053,7 +1186,7 @@ def bulk_resolve_exceptions_endpoint(payload: BulkExceptionResolveRequest):
             "note": note,
             "resolved_by": resolved_by
         })
-    resolved_count = mgr.bulk_resolve_exceptions(items_to_resolve, resolved_by=payload.resolved_by or "Vardiya Amiri / Toplu Onay")
+    resolved_count = mgr.bulk_resolve_exceptions(items_to_resolve, resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri / Toplu Onay")
     return {
         "status": "success",
         "message": f"{resolved_count} istisna kaydı başarıyla toplu onaylandı ve puantaj güncellendi.",
@@ -1103,11 +1236,15 @@ def get_bonuses(
 
 @app.get("/api/financial-radar")
 def get_financial_radar(
+    request: Request = None,
     search: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500)
 ):
+    user = get_current_user_from_request(request)
+    if not user.get("can_view_finance", False):
+        raise HTTPException(status_code=403, detail="Finans ve maliyet radarına erişim yetkiniz bulunmamaktadır.")
     mgr = EngineManager.get_instance()
     fin = mgr.engine.calculate_financial_radar()
 
@@ -1234,7 +1371,10 @@ def get_rules():
     return rules
 
 @app.post("/api/rules")
-def update_rules(payload: RuleUpdateRequest):
+def update_rules(payload: RuleUpdateRequest, request: Request = None):
+    user = get_current_user_from_request(request)
+    if not user.get("can_edit_rules", False):
+        raise HTTPException(status_code=403, detail="Fabrika kurallarını düzenleme yetkiniz bulunmamaktadır. Yalnızca Sistem Yöneticisi yetkilidir.")
     save_rules(payload.rules)
     # Motoru yeni kurallarla yeniden yükle
     mgr = EngineManager.get_instance()

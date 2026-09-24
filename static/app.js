@@ -12,6 +12,21 @@ const AppState = {
   activeTab: 'tab-overview',
   stats: null,
   rules: null,
+
+  // Aktif Oturum ve Rol (RBAC)
+  currentUser: {
+    username: 'admin',
+    name: 'Sistem Yöneticisi',
+    title: 'Sistem Yöneticisi (Admin)',
+    role: 'admin',
+    avatar: '🛡️',
+    allowed_tabs: ['tab-overview', 'tab-matrix', 'tab-exceptions', 'tab-bonuses', 'tab-finance', 'tab-compliance', 'tab-reports'],
+    can_resolve_exceptions: true,
+    can_view_finance: true,
+    can_view_compliance: true,
+    can_edit_rules: true,
+    can_export_reports: true
+  },
   
   // Puantaj Matrisi Durumu
   matrix: {
@@ -70,6 +85,21 @@ const AppState = {
     items: [],
     departments: []
   }
+};
+
+// ----------------------------------------------------------------------------
+// GLOBAL FETCH INTERCEPTOR (RBAC Rol Yetkisi Gönderici)
+// ----------------------------------------------------------------------------
+const _nativeFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+  options.headers = options.headers || {};
+  const activeUsername = (AppState.currentUser && AppState.currentUser.username) || localStorage.getItem('fide_user_role') || 'admin';
+  if (options.headers instanceof Headers) {
+    options.headers.set('X-User-Role', activeUsername);
+  } else {
+    options.headers['X-User-Role'] = activeUsername;
+  }
+  return _nativeFetch.call(this, url, options);
 };
 
 // ----------------------------------------------------------------------------
@@ -2018,6 +2048,177 @@ document.addEventListener('DOMContentLoaded', () => {
   setupDropzone('dropzonePdks', 'fileInputPdks', 'pdks');
   setupDropzone('dropzonePuantaj', 'fileInputPuantaj', 'puantaj');
 
-  // Başlangıç Yüklemesi
-  loadStats();
+  // RBAC ve Kullanıcı Profili Dinleyicileri
+  const userProfileBtn = document.getElementById('userProfileBtn');
+  if (userProfileBtn) {
+    userProfileBtn.addEventListener('click', openRoleSwitcherModal);
+  }
+
+  const formLogin = document.getElementById('formCustomLogin');
+  if (formLogin) {
+    formLogin.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const u = document.getElementById('loginUsername').value.trim();
+      const p = document.getElementById('loginPassword').value;
+      if (u) switchRole(u, p);
+    });
+  }
+
+  // Başlangıç Yüklemesi: Önce kullanıcı yetkilerini çek, sonra verileri yükle
+  initCurrentUser().then(() => {
+    loadStats();
+  });
 });
+
+// ----------------------------------------------------------------------------
+// 9. ROL BAZLI ERİŞİM VE KULLANICI YÖNETİMİ (RBAC İŞLEVLERİ)
+// ----------------------------------------------------------------------------
+async function initCurrentUser() {
+  const savedRole = localStorage.getItem('fide_user_role') || 'admin';
+  try {
+    const res = await fetch('/api/auth/me', {
+      headers: { 'X-User-Role': savedRole }
+    });
+    if (res.ok) {
+      const user = await res.json();
+      AppState.currentUser = user;
+      applyRolePermissions(user);
+    }
+  } catch (err) {
+    console.error('Kullanıcı bilgisi alınamadı:', err);
+  }
+}
+
+function applyRolePermissions(user) {
+  if (!user) return;
+
+  // 1. Üst bar profil hapı güncelleme
+  const avatarEl = document.getElementById('headerUserAvatar');
+  const nameEl = document.getElementById('headerUserName');
+  const roleEl = document.getElementById('headerUserRole');
+
+  if (avatarEl) avatarEl.innerText = user.avatar || '👤';
+  if (nameEl) nameEl.innerText = user.name || user.username;
+  if (roleEl) roleEl.innerText = user.role.toUpperCase();
+
+  // 2. Sekme butonlarını yetkiye göre göster / gizle
+  const allowed = new Set(user.allowed_tabs || []);
+  const allTabs = document.querySelectorAll('.nav-tabs .nav-tab');
+
+  allTabs.forEach(btn => {
+    const tabId = btn.getAttribute('data-tab');
+    if (allowed.has(tabId)) {
+      btn.style.display = 'inline-flex';
+    } else {
+      btn.style.display = 'none';
+    }
+  });
+
+  // 3. Eğer mevcut açık sekme yeni role kapalıysa izin verilen ilk sekmeye geç
+  if (!allowed.has(AppState.activeTab)) {
+    const firstAllowed = user.allowed_tabs && user.allowed_tabs.length > 0 ? user.allowed_tabs[0] : 'tab-overview';
+    switchTab(firstAllowed);
+  }
+
+  // 4. Yetkiye bağlı eylem butonları
+  const btnHeaderGen = document.getElementById('btnHeaderGenerate');
+  if (btnHeaderGen) {
+    btnHeaderGen.style.display = user.can_edit_rules ? 'inline-flex' : 'none';
+  }
+
+  const rulesSubmit = document.querySelector('#rulesForm button[type="submit"]');
+  if (rulesSubmit) {
+    rulesSubmit.style.display = user.can_edit_rules ? 'inline-flex' : 'none';
+  }
+}
+
+async function openRoleSwitcherModal() {
+  const grid = document.getElementById('roleSwitcherGrid');
+  if (!grid) return;
+
+  grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: var(--text-muted);">Rol profilleri yükleniyor...</div>';
+  openModal('modalRoleSwitcher');
+
+  try {
+    const res = await fetch('/api/auth/users');
+    if (!res.ok) throw new Error('Kullanıcı listesi alınamadı');
+    const data = await res.json();
+
+    let html = '';
+    const activeUsername = AppState.currentUser ? AppState.currentUser.username : '';
+
+    const roleDescriptions = {
+      'hr': 'Tüm puantajı, eksik basımları, yasal uyum risk radarını ve imzalı A4 fişlerini yönetir.',
+      'accounting': 'Maaş ve mesai maliyet radarını, net/brüt ve nakit farklarını inceler, resmi Excel ve bordroları alır.',
+      'plant_manager': 'Üst düzey fabrika KPI\'larını, maliyet trendlerini ve yasal risk indeksini inceler.',
+      'admin': 'Tüm modüllere, rapor üretimine, kurallara ve sistem ayarlarına tam yetkili erişim sağlar.'
+    };
+
+    const roleBadges = {
+      'hr': ['Puantaj & Fişler', 'İstisna Onayı', 'Yasal Uyum'],
+      'accounting': ['Maaş & Finans', 'Resmi Raporlar', 'Bölüm Primleri'],
+      'plant_manager': ['Fabrika KPI', 'Maliyet Radarı', 'Uyum İndeksi'],
+      'admin': ['Tam Yetki', 'Kural Düzenleme', 'Tüm Sekmeler']
+    };
+
+    data.users.forEach(u => {
+      const isActive = u.username === activeUsername;
+      const desc = roleDescriptions[u.role] || '';
+      const tags = roleBadges[u.role] || [];
+
+      html += `
+        <div class="role-card ${isActive ? 'active-role' : ''}" onclick="switchRole('${u.username}')">
+          <div class="role-card-header">
+            <div class="role-card-avatar">${u.avatar || '👤'}</div>
+            <div class="role-card-titles">
+              <span class="role-card-name">${u.name}</span>
+              <span class="role-card-role">${u.title}</span>
+            </div>
+          </div>
+          <div class="role-card-desc">${desc}</div>
+          <div class="role-card-scope">
+            ${tags.map(t => `<span class="role-scope-tag">${t}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    });
+
+    grid.innerHTML = html;
+  } catch (err) {
+    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--color-danger); padding: 20px;">Hata: ${err.message}</div>`;
+  }
+}
+
+async function switchRole(username, password = null) {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: username, password: password })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Giriş yapılamadı');
+    }
+
+    const data = await res.json();
+    AppState.currentUser = data.user;
+    localStorage.setItem('fide_user_role', data.user.username);
+
+    applyRolePermissions(data.user);
+    closeModal('modalRoleSwitcher');
+
+    showToast(`🔐 Giriş yapıldı: ${data.user.name} (${data.user.title})`, 'success');
+
+    // Aktif sekmenin içeriğini yeni yetkilerle tazele
+    loadStats();
+    if (AppState.activeTab === 'tab-matrix') loadMatrix();
+    if (AppState.activeTab === 'tab-exceptions') loadExceptions();
+    if (AppState.activeTab === 'tab-bonuses') loadBonuses();
+    if (AppState.activeTab === 'tab-finance') loadFinancialRadar();
+    if (AppState.activeTab === 'tab-compliance') loadComplianceRadar();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
