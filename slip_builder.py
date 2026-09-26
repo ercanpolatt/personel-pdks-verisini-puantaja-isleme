@@ -39,6 +39,7 @@ def generate_single_slip_html(
     tot_work_days = summary.get("total_work_days", 0)
     tot_base = summary.get("total_base_hours", 0.0)
     tot_ot = summary.get("total_ot_hours", 0.0)
+    tot_missing = summary.get("total_missing_hours", 0.0)
     tot_bonus = summary.get("total_bonus_hours", 0.0)
     tot_hours = summary.get("total_hours", 0.0)
     sunday_count = len(sundays)
@@ -88,6 +89,9 @@ def generate_single_slip_html(
                 note_display = f"Fazla Mesai ({clean_display_text(note_raw)})"
             elif bonus_h > 0:
                 note_display = f"Primli ({clean_display_text(note_raw)})"
+            elif 0 < final_h < 7.5:
+                miss_val = round(7.5 - final_h, 2)
+                note_display = f"Eksik Çalışma (-{fmt_hours_tr(miss_val)}s | 1.0x)"
             else:
                 note_display = clean_display_text(note_raw)
         else:
@@ -124,6 +128,15 @@ def generate_single_slip_html(
     table_rows_str = "\n".join(rows_html)
 
     bonus_total_str = f"+{fmt_hours_tr(tot_bonus)}" if tot_bonus > 0 else "-"
+
+    missing_kpi_html = ""
+    if tot_missing > 0:
+        missing_kpi_html = f"""
+          <div class="kpi-strip-item" style="border-color: #fecaca; background: #fef2f2;">
+            <div class="kpi-strip-label" style="color: #b91c1c;">Eksik Saat (1.0x)</div>
+            <div class="kpi-strip-val" style="color: #b91c1c;">-{fmt_hours_tr(tot_missing)} <small style="font-size:9px;font-weight:normal;">saat</small></div>
+          </div>
+        """
 
     # Tek bir A4 sayfası HTML bileşeni
     return f"""
@@ -163,9 +176,10 @@ def generate_single_slip_html(
             <div class="kpi-strip-val">{fmt_hours_tr(tot_base)} <small style="font-size:9px;font-weight:normal;">saat</small></div>
           </div>
           <div class="kpi-strip-item" style="border-color: #fed7aa; background: #fffaf5;">
-            <div class="kpi-strip-label" style="color: #c2410c;">Fazla Mesai (FM)</div>
+            <div class="kpi-strip-label" style="color: #c2410c;">Fazla Mesai (1.5x)</div>
             <div class="kpi-strip-val" style="color: #c2410c;">{fmt_hours_tr(tot_ot)} <small style="font-size:9px;font-weight:normal;">saat</small></div>
           </div>
+          {missing_kpi_html}
           <div class="kpi-strip-item" style="border-color: #e9d5ff; background: #faf5ff;">
             <div class="kpi-strip-label" style="color: #7e22ce;">Bölüm Primi</div>
             <div class="kpi-strip-val" style="color: #7e22ce;">{fmt_hours_tr(tot_bonus)} <small style="font-size:9px;font-weight:normal;">saat</small></div>

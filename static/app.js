@@ -1047,7 +1047,8 @@ async function loadFinancialRadar() {
     if (valOt) valOt.innerText = fmtCurrency(s.total_overtime_cost);
 
     const subOt = document.getElementById('subFinancialOtHours');
-    if (subOt) subOt.innerText = `${fmtHours(s.total_overtime_hours)}s Fazla Mesai (4857 SK %50)`;
+    const missText = s.total_missing_hours > 0 ? ` - ${fmtHours(s.total_missing_hours)}s Eksik (1.0x)` : '';
+    if (subOt) subOt.innerText = `${fmtHours(s.total_overtime_hours)}s FM (1.5x)${missText}`;
 
     const valPayroll = document.getElementById('valFinancialPayrollCost');
     if (valPayroll) valPayroll.innerText = fmtCurrency(s.total_payroll_budget);
@@ -1173,6 +1174,11 @@ function renderFinancialTable(items, startIdx) {
       ? `<span class="badge badge-success" style="font-family: var(--font-mono); font-weight:700;">+${fmtCurrency(p.cash_difference)}</span>`
       : `<span style="color: var(--text-dim); font-family: var(--font-mono); font-size:11px;">₺0,00</span>`;
 
+    const hasMissing = p.missing_hours > 0;
+    const missingBadge = hasMissing
+      ? `<span style="color: #f87171; font-weight: 700; font-family: var(--font-mono);" title="Eksik Kesintisi (1.0x): -${fmtCurrency(p.missing_deduction_cost || 0)}">-${fmtHours(p.missing_hours)}</span>`
+      : `<span style="color: var(--text-dim);">-</span>`;
+
     html += `
       <tr>
         <td>${startIdx + idx + 1}</td>
@@ -1184,9 +1190,9 @@ function renderFinancialTable(items, startIdx) {
         <td style="text-align: right; color: var(--text-muted);" class="cell-mono">${fmtCurrency(p.hourly_base_rate)}</td>
         <td style="text-align: right; color: var(--color-cyan);" class="cell-mono">${fmtCurrency(p.hourly_overtime_rate)}</td>
         <td style="text-align: right;" class="cell-mono">${fmtHours(p.weekday_ot_hours)}</td>
+        <td style="text-align: right;" class="cell-mono">${missingBadge}</td>
         <td style="text-align: right;" class="cell-mono">${fmtHours(p.sunday_ot_hours)}</td>
-        <td style="text-align: right; font-weight: 700;" class="cell-mono">${fmtHours(p.total_ot_hours)}</td>
-        <td style="text-align: right; font-weight: 700; color: var(--color-amber);" class="cell-mono">${fmtCurrency(p.overtime_cost)}</td>
+        <td style="text-align: right; font-weight: 700; color: var(--color-amber);" class="cell-mono" title="H.İçi Net Mesai: ${fmtCurrency(p.weekday_ot_cost || 0)} | Pazar: ${fmtCurrency(p.sunday_ot_cost || 0)}">${fmtCurrency(p.overtime_cost)}</td>
         <td style="text-align: right;" class="cell-mono">${p.bonus_hours > 0 ? '+' + fmtHours(p.bonus_hours) : '-'}</td>
         <td style="text-align: right; color: var(--color-purple);" class="cell-mono">${p.bonus_cost > 0 ? fmtCurrency(p.bonus_cost) : '-'}</td>
         <td style="text-align: right; font-weight: 800; color: #ffffff;" class="cell-mono">${fmtCurrency(p.total_net_earned)}</td>

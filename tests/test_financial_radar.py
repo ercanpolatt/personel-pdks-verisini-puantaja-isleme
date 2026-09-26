@@ -45,12 +45,51 @@ def test_financial_hourly_rates(engine):
         assert abs(p["hourly_base_rate"] - expected_base_rate) <= 0.05
         assert abs(p["hourly_overtime_rate"] - expected_ot_rate) <= 0.05
 
-        # Verify weekday and sunday overtime both use 1.5 multiplier
-        expected_weekday_cost = round(p["weekday_ot_hours"] * expected_ot_rate, 2)
+        # Verify weekday overtime (1.5x), missing hours deduction (1.0x), and sunday overtime (1.5x)
+        # Formül: IF(h>7.5, (h-7.5)*1.5, h-7.5) kuralı: (weekday_ot * 1.5 - missing_hours * 1.0)
+        expected_weekday_cost = round(((p["weekday_ot_hours"] * 1.5) - (p["missing_hours"] * 1.0)) * expected_base_rate, 2)
         expected_sunday_cost = round(p["sunday_ot_hours"] * expected_ot_rate, 2)
         expected_total_ot_cost = round(expected_weekday_cost + expected_sunday_cost, 2)
 
         assert abs(p["overtime_cost"] - expected_total_ot_cost) <= 1.00
+
+
+def test_overtime_1_5_and_missing_1_0_formula(engine):
+    """
+    Kullanıcı Formülü Testi:
+    =IF($AE3="";"";IF($AE3>7,5;($AE3-7,5)*1,5;$AE3-7,5))
+    Fazla mesai çarpanı 1.5, eksik saat çarpanı 1.0 olarak hesaplanmalı.
+    Eksik saat ve fazla mesai 1:1 toplanmamalı; 1 saat mesai (+1.5) ile 1 saat eksik (-1.0)
+    birbirini sıfırlamaz, geriye 0.5 saatlik net mesai primi bırakır.
+    """
+    fin = engine.calculate_financial_radar()
+    summary = fin["summary"]
+    items = fin["personnel_costs"]
+
+    # 1. Fabrika genelinde eksik saat ve fazla mesaisi olan personeller bulunmalı
+    workers_with_missing = [p for p in items if p["missing_hours"] > 0]
+    workers_with_both = [p for p in items if p["missing_hours"] > 0 and p["weekday_ot_hours"] > 0]
+    
+    assert len(workers_with_missing) > 0, "Eksik çalışması olan personel tespit edilemedi"
+    assert len(workers_with_both) > 0, "Hem mesaisi hem eksik çalışması olan personel tespit edilemedi"
+    assert summary["total_missing_hours"] > 0, "Fabrika toplam eksik saati 0 olamaz"
+    assert summary["total_missing_deduction"] > 0, "Fabrika toplam eksik çalışma kesintisi 0 olamaz"
+
+    # 2. Her personel için net mesai saati doğrulaması: (weekday_ot * 1.5) - (missing_hours * 1.0)
+    for p in items:
+        expected_net_ot_hours = round((p["weekday_ot_hours"] * 1.5) - (p["missing_hours"] * 1.0), 2)
+        assert abs(p["net_weekday_ot_hours"] - expected_net_ot_hours) <= 0.05
+
+        # Eksik saat kesintisi tam 1.0 katı saatlik ücret olmalıdır:
+        expected_deduction = round(p["missing_hours"] * p["hourly_base_rate"], 2)
+        assert abs(p["missing_deduction_cost"] - expected_deduction) <= 0.50
+
+        # Brüt mesai kazancı tam 1.5 katı olmalıdır:
+        expected_gross_ot = round(p["weekday_ot_hours"] * 1.5 * p["hourly_base_rate"], 2)
+        assert abs(p["gross_weekday_ot_cost"] - expected_gross_ot) <= 0.50
+
+        # Net hafta içi mesai tutarı = Brüt Mesai - Eksik Kesinti
+        assert abs(p["weekday_ot_cost"] - (expected_gross_ot - expected_deduction)) <= 0.50
 
 
 def test_sunday_overtime_multiplier_1_5(engine):

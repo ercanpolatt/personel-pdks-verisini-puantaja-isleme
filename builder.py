@@ -153,6 +153,7 @@ def build_puantaj_workbook(
         ("Eksik Gün Sayısı", 11, fill_deduct),
         ("Eksik Gün Nedeni", 15, fill_navy),
         ("Hafta İçi Fazla Mesai (Saat)", 13, fill_overtime),
+        ("Eksik Çalışma (Saat)", 12, fill_deduct),
         ("Pazar Mesai (Saat)", 13, fill_pazar),
         ("Maaş Hakedişi (TL)", 14, fill_navy),
         ("H.İçi Mesai Tutarı (TL)", 15, fill_overtime),
@@ -246,6 +247,7 @@ def build_puantaj_workbook(
         
         name_k = emp["name_key"]
         emp_ot_weekday = 0.0
+        emp_missing_hours = 0.0
         emp_ot_sunday = 0.0
         
         for col_let, text, width, is_pazar, d in day_cols:
@@ -278,6 +280,8 @@ def build_puantaj_workbook(
                     emp_ot_sunday += hours
                 else:
                     emp_ot_weekday += fazla
+                    if hours < 7.5:
+                        emp_missing_hours += round(7.5 - hours, 2)
             else:
                 cell.value = 0
                 
@@ -290,16 +294,17 @@ def build_puantaj_workbook(
         c_eksik_days = calc_col_letters[6][0]
         c_eksik_neden = calc_col_letters[7][0]
         c_ot_weekday = calc_col_letters[8][0]
-        c_ot_pazar = calc_col_letters[9][0]
-        c_maas_tl = calc_col_letters[10][0]
-        c_ot_hi_tl = calc_col_letters[11][0]
-        c_ot_hs_tl = calc_col_letters[12][0]
-        c_ot_tot_tl = calc_col_letters[13][0]
-        c_hakedis_tl = calc_col_letters[14][0]
-        c_bordro_net = calc_col_letters[15][0]
-        c_icra_kes = calc_col_letters[16][0]
-        c_elden_fark = calc_col_letters[17][0]
-        c_net_odenecek = calc_col_letters[18][0]
+        c_missing_hours = calc_col_letters[9][0]
+        c_ot_pazar = calc_col_letters[10][0]
+        c_maas_tl = calc_col_letters[11][0]
+        c_ot_hi_tl = calc_col_letters[12][0]
+        c_ot_hs_tl = calc_col_letters[13][0]
+        c_ot_tot_tl = calc_col_letters[14][0]
+        c_hakedis_tl = calc_col_letters[15][0]
+        c_bordro_net = calc_col_letters[16][0]
+        c_icra_kes = calc_col_letters[17][0]
+        c_elden_fark = calc_col_letters[18][0]
+        c_net_odenecek = calc_col_letters[19][0]
         
         # Dinamik Canlı Excel Formülleri
         sundays_count = len(engine.sundays)
@@ -319,11 +324,13 @@ def build_puantaj_workbook(
         ws_p[f"{c_eksik_neden}{r_idx}"] = f'=IF({c_rap_days}{r_idx}>0, "01-İstirahat", IF({c_eksik_days}{r_idx}>0, "12-Birden Fazla", ""))'
         
         ws_p[f"{c_ot_weekday}{r_idx}"] = emp_ot_weekday
+        ws_p[f"{c_missing_hours}{r_idx}"] = emp_missing_hours
         ws_p[f"{c_ot_pazar}{r_idx}"] = emp_ot_sunday
         
-        # Finansal Ücret ve Fazla Mesai Formülleri (Pazar ve Hafta İçi 1.5x katsayılı)
+        # Finansal Ücret ve Fazla Mesai Formülleri (Mesai 1.5x, Eksik Saat 1.0x katsayılı)
+        # Formül: IF(h>7.5, (h-7.5)*1.5, h-7.5) kuralına uygun: (Mesai * 1.5) - (Eksik * 1.0)
         ws_p[f"{c_maas_tl}{r_idx}"] = f"=(L{r_idx}/30)*{c_work_days}{r_idx}"
-        ws_p[f"{c_ot_hi_tl}{r_idx}"] = f"=(L{r_idx}/225)*1.5*{c_ot_weekday}{r_idx}"
+        ws_p[f"{c_ot_hi_tl}{r_idx}"] = f"=(L{r_idx}/225)*(({c_ot_weekday}{r_idx}*1.5)-({c_missing_hours}{r_idx}*1.0))"
         ws_p[f"{c_ot_hs_tl}{r_idx}"] = f"=(L{r_idx}/225)*1.5*{c_ot_pazar}{r_idx}"
         ws_p[f"{c_ot_tot_tl}{r_idx}"] = f"={c_ot_hi_tl}{r_idx}+{c_ot_hs_tl}{r_idx}"
         ws_p[f"{c_hakedis_tl}{r_idx}"] = f"={c_maas_tl}{r_idx}+{c_ot_tot_tl}{r_idx}"
@@ -343,6 +350,7 @@ def build_puantaj_workbook(
             (c_eksik_days, "0", align_center, fill_deduct),
             (c_eksik_neden, "@", align_center, None),
             (c_ot_weekday, "0.0", align_center, fill_overtime),
+            (c_missing_hours, "0.0", align_center, fill_deduct if emp_missing_hours > 0 else None),
             (c_ot_pazar, "0.0", align_center, fill_pazar),
             (c_maas_tl, "#,##0.00", align_right, None),
             (c_ot_hi_tl, "#,##0.00", align_right, fill_overtime),
@@ -384,9 +392,9 @@ def build_puantaj_workbook(
         ws_p[f"{col_let}{tot_r_puantaj}"] = f"=SUM({col_let}4:{col_let}{tot_r_puantaj-1})"
         ws_p[f"{col_let}{tot_r_puantaj}"].number_format = "0.0"
 
-    for cl in [c_tot_hours, c_work_days, c_ht_days, c_izin_days, c_rap_days, c_sgk_days, c_eksik_days, c_ot_weekday, c_ot_pazar]:
+    for cl in [c_tot_hours, c_work_days, c_ht_days, c_izin_days, c_rap_days, c_sgk_days, c_eksik_days, c_ot_weekday, c_missing_hours, c_ot_pazar]:
         ws_p[f"{cl}{tot_r_puantaj}"] = f"=SUM({cl}4:{cl}{tot_r_puantaj-1})"
-        ws_p[f"{cl}{tot_r_puantaj}"].number_format = "0.0" if cl in (c_tot_hours, c_ot_weekday, c_ot_pazar) else "0"
+        ws_p[f"{cl}{tot_r_puantaj}"].number_format = "0.0" if cl in (c_tot_hours, c_ot_weekday, c_missing_hours, c_ot_pazar) else "0"
 
     for cl in [c_maas_tl, c_ot_hi_tl, c_ot_hs_tl, c_ot_tot_tl, c_hakedis_tl, c_bordro_net, c_icra_kes, c_elden_fark, c_net_odenecek]:
         ws_p[f"{cl}{tot_r_puantaj}"] = f"=SUM({cl}4:{cl}{tot_r_puantaj-1})"

@@ -167,7 +167,9 @@ def generate_financial_excel(fin_data: Dict[str, Any], output_path: str = "maas_
         ("Sıra", 6), ("TC Kimlik No", 14), ("Adı Soyadı", 24), ("Bölüm", 20),
         ("Çalışılan Gün", 13), ("Net Maaş (TL)", 14), ("Saatlik Ücret (TL)", 15),
         ("Saatlik Mesai Ücreti (%50 Zam)", 18), ("Hafta İçi FM (Saat)", 16),
-        ("Pazar FM (Saat)", 14), ("Toplam FM (Saat)", 15), ("FM Tutarı (TL)", 16),
+        ("Eksik Çalışma (Saat - 1.0x)", 18), ("Pazar FM (Saat)", 14),
+        ("H.İçi Net Mesai Saati", 16), ("FM Tutarı (TL)", 16),
+        ("Eksik Çalışma Kesintisi (TL)", 18),
         ("Bölüm Primi (Saat)", 15), ("Bölüm Primi Tutarı (TL)", 18),
         ("Normal Maaş Hakedişi (TL)", 18), ("Toplam Net Hakediş (TL)", 18),
         ("SGK Banka Neti (TL)", 16), ("Elden Ödenecek Net Fark (TL)", 18)
@@ -192,26 +194,28 @@ def generate_financial_excel(fin_data: Dict[str, Any], output_path: str = "maas_
         ws_p[f"F{r_idx}"] = p["net_maas"]
         ws_p[f"G{r_idx}"] = p["hourly_net"]
         ws_p[f"H{r_idx}"] = p["ot_hourly_net"]
-        ws_p[f"I{r_idx}"] = p["weekday_ot_hours"]
-        ws_p[f"J{r_idx}"] = p["sunday_ot_hours"]
-        ws_p[f"K{r_idx}"] = p["all_ot_hours"]
-        ws_p[f"L{r_idx}"] = p["ot_cost"]
-        ws_p[f"M{r_idx}"] = p["bonus_hours"]
-        ws_p[f"N{r_idx}"] = p["bonus_cost"]
-        ws_p[f"O{r_idx}"] = p["base_cost"]
-        ws_p[f"P{r_idx}"] = p["total_net_wage"]
-        ws_p[f"Q{r_idx}"] = p["bank_net"]
-        ws_p[f"R{r_idx}"] = p["cash_diff"]
+        ws_p[f"I{r_idx}"] = p.get("weekday_ot_hours", 0.0)
+        ws_p[f"J{r_idx}"] = p.get("missing_hours", 0.0)
+        ws_p[f"K{r_idx}"] = p.get("sunday_ot_hours", 0.0)
+        ws_p[f"L{r_idx}"] = p.get("net_weekday_ot_hours", 0.0)
+        ws_p[f"M{r_idx}"] = p["ot_cost"]
+        ws_p[f"N{r_idx}"] = p.get("missing_deduction_cost", 0.0)
+        ws_p[f"O{r_idx}"] = p["bonus_hours"]
+        ws_p[f"P{r_idx}"] = p["bonus_cost"]
+        ws_p[f"Q{r_idx}"] = p["base_cost"]
+        ws_p[f"R{r_idx}"] = p["total_net_wage"]
+        ws_p[f"S{r_idx}"] = p["bank_net"]
+        ws_p[f"T{r_idx}"] = p["cash_diff"]
         
-        for c in range(1, 19):
+        for c in range(1, 21):
             cl = get_column_letter(c)
             cell = ws_p[f"{cl}{r_idx}"]
             cell.border = border_thin
             cell.font = font_data
-            if c in (6, 7, 8, 12, 14, 15, 16, 17, 18):
+            if c in (6, 7, 8, 13, 14, 16, 17, 18, 19, 20):
                 cell.number_format = "#,##0.00 TL"
                 cell.alignment = Alignment(horizontal="right", vertical="center")
-            elif c in (9, 10, 11, 13):
+            elif c in (9, 10, 11, 12, 15):
                 cell.number_format = "#,##0.0"
                 cell.alignment = Alignment(horizontal="right", vertical="center")
             elif c in (1, 2, 5):

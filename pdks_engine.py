@@ -1246,11 +1246,14 @@ class PDKSEngine:
                 "net_maas": p.get("net_maas", 0.0),
                 "mesai_durumu": p.get("mesai_durumu", "ALIR"),
                 "daily_hours": {},
+                "daily_formula_hours": {},
                 "total_work_days": 0,
                 "total_base_hours": 0.0,
                 "total_ot_hours": 0.0,
+                "total_missing_hours": 0.0,
                 "total_weekday_ot_hours": 0.0,
                 "total_sunday_ot_hours": 0.0,
+                "net_weekday_ot_hours": 0.0,
                 "total_bonus_hours": 0.0,
                 "total_hours": 0.0
             }
@@ -1263,15 +1266,35 @@ class PDKSEngine:
                     row["total_work_days"] += 1
                     row["total_base_hours"] += rec["base_hours"]
                     row["total_ot_hours"] += rec["overtime_hours"]
+                    
                     if d in self.sundays:
                         row["total_sunday_ot_hours"] += h
+                        row["daily_formula_hours"][d] = round(h * 1.5, 2)
                     else:
-                        row["total_weekday_ot_hours"] += rec["overtime_hours"]
+                        ot_h = rec["overtime_hours"]
+                        row["total_weekday_ot_hours"] += ot_h
+                        if h < 7.5:
+                            miss_h = round(7.5 - h, 2)
+                            row["total_missing_hours"] += miss_h
+                            # Formül: IF(h>7.5, (h-7.5)*1.5, h-7.5) -> Eksik saat 1.0x (negatif saat)
+                            row["daily_formula_hours"][d] = round(h - 7.5, 2)
+                        elif ot_h > 0:
+                            # Formül: IF(h>7.5, (h-7.5)*1.5, h-7.5) -> Mesai 1.5x
+                            row["daily_formula_hours"][d] = round(ot_h * 1.5, 2)
+                        else:
+                            row["daily_formula_hours"][d] = 0.0
+                            
                     row["total_bonus_hours"] += rec["bonus_hours"]
                     row["total_hours"] += h
                 else:
                     row["daily_hours"][d] = 0.0
+                    row["daily_formula_hours"][d] = None
                     
+            row["total_weekday_ot_hours"] = round(row["total_weekday_ot_hours"], 2)
+            row["total_missing_hours"] = round(row["total_missing_hours"], 2)
+            row["total_sunday_ot_hours"] = round(row["total_sunday_ot_hours"], 2)
+            # Net hafta içi mesai bakiyesi: (Fazla Mesai * 1.5) - (Eksik Saat * 1.0)
+            row["net_weekday_ot_hours"] = round((row["total_weekday_ot_hours"] * 1.5) - (row["total_missing_hours"] * 1.0), 2)
             matrix.append(row)
         return matrix
 
@@ -1279,8 +1302,10 @@ class PDKSEngine:
         """
         Tüm personelin net maaş ve saatlik ücretlerini baz alarak:
         - Toplam normal çalışma maliyeti
-        - Toplam fazla mesai maliyeti (Hafta içi ve Pazar 1.5x)
-        - Toplam bölüm primi maliyeti
+        - Toplam fazla mesai maliyeti:
+          * Hafta İçi: =IF(h>7.5; (h-7.5)*1.5; h-7.5) kuralıyla (1.5x Mesai, 1.0x Eksik Saat Kesintisi)
+          * Pazar: 1.5x Pazar Mesai Çarpanı
+        - Toplam bölüm primi maliyeti (1.5x)
         - Toplam hakediş ve elden fark maliyeti
         - Departman bazlı anlamlı maliyet ve bütçe analizini (TL, %, kişi başı ortalamalar)
         üretir.
@@ -1293,6 +1318,9 @@ class PDKSEngine:
             
         total_base_cost = 0.0
         total_ot_cost = 0.0
+        total_weekday_ot_cost = 0.0
+        total_sunday_ot_cost = 0.0
+        total_missing_deduction = 0.0
         total_bonus_cost = 0.0
         total_payroll_cost = 0.0
         total_bank_cost = 0.0
@@ -1316,17 +1344,26 @@ class PDKSEngine:
                     net_m = 28075.50  # Standart net asgari ücret tabanı
                     
             hourly_net = net_m / 225.0
-            # Pazar ve hafta içi mesaisi fabrika kuralı olarak 1.5 kat hesaplanır:
             ot_hourly_net = hourly_net * 1.5
             
             weekday_ot = m.get("total_weekday_ot_hours", 0.0)
+            missing_hours = m.get("total_missing_hours", 0.0)
             sunday_ot = m.get("total_sunday_ot_hours", 0.0)
-            all_ot_hours = weekday_ot + sunday_ot
+            bonus_hours = m.get("total_bonus_hours", 0.0)
+            all_ot_hours = round(weekday_ot + sunday_ot, 2)
             
-            base_cost = (net_m / 30.0) * m["total_work_days"]
-            ot_cost = all_ot_hours * ot_hourly_net
-            bonus_cost = m["total_bonus_hours"] * ot_hourly_net
-            total_net_wage = base_cost + ot_cost
+            # Formül: =IF($AE3=""; ""; IF($AE3>7.5; ($AE3-7.5)*1.5; $AE3-7.5))
+            # Hafta içi mesainin çarpanı 1.5, eksik saatin çarpanı 1:
+            net_weekday_ot_hours = round((weekday_ot * 1.5) - (missing_hours * 1.0), 2)
+            
+            base_cost = round((net_m / 30.0) * m["total_work_days"], 2)
+            weekday_ot_cost = round(net_weekday_ot_hours * hourly_net, 2)
+            missing_deduction_cost = round(missing_hours * hourly_net, 2)
+            gross_weekday_ot_cost = round(weekday_ot * 1.5 * hourly_net, 2)
+            sunday_ot_cost = round(sunday_ot * 1.5 * hourly_net, 2)
+            ot_cost = round(weekday_ot_cost + sunday_ot_cost, 2)
+            bonus_cost = round(bonus_hours * ot_hourly_net, 2)
+            total_net_wage = round(base_cost + ot_cost + bonus_cost, 2)
             
             bank_net = self.bordro_by_tc.get(tc, {}).get("odenecek_net", 0.0)
             icra_info = self.icra_by_name.get(name_k, {})
@@ -1334,6 +1371,9 @@ class PDKSEngine:
             cash_diff = max(0.0, total_net_wage - bank_net - icra_kes)
             
             total_base_cost += base_cost
+            total_weekday_ot_cost += weekday_ot_cost
+            total_sunday_ot_cost += sunday_ot_cost
+            total_missing_deduction += missing_deduction_cost
             total_ot_cost += ot_cost
             total_bonus_cost += bonus_cost
             total_payroll_cost += total_net_wage
@@ -1347,9 +1387,14 @@ class PDKSEngine:
                     "active_count": 0,
                     "total_hours": 0.0,
                     "ot_hours": 0.0,
+                    "weekday_ot_hours": 0.0,
+                    "missing_hours": 0.0,
+                    "net_weekday_ot_hours": 0.0,
+                    "sunday_ot_hours": 0.0,
                     "bonus_hours": 0.0,
                     "base_cost": 0.0,
                     "ot_cost": 0.0,
+                    "missing_deduction": 0.0,
                     "bonus_cost": 0.0,
                     "total_cost": 0.0,
                     "avg_ot_hours_per_worker": 0.0,
@@ -1361,9 +1406,14 @@ class PDKSEngine:
             dept_costs[dept]["active_count"] += 1
             dept_costs[dept]["total_hours"] += m["total_hours"]
             dept_costs[dept]["ot_hours"] += all_ot_hours
+            dept_costs[dept]["weekday_ot_hours"] += weekday_ot
+            dept_costs[dept]["missing_hours"] += missing_hours
+            dept_costs[dept]["net_weekday_ot_hours"] += net_weekday_ot_hours
+            dept_costs[dept]["sunday_ot_hours"] += sunday_ot
             dept_costs[dept]["bonus_hours"] += m["total_bonus_hours"]
             dept_costs[dept]["base_cost"] += base_cost
             dept_costs[dept]["ot_cost"] += ot_cost
+            dept_costs[dept]["missing_deduction"] += missing_deduction_cost
             dept_costs[dept]["bonus_cost"] += bonus_cost
             dept_costs[dept]["total_cost"] += total_net_wage
             
@@ -1381,12 +1431,17 @@ class PDKSEngine:
                 "hourly_base_rate": round(hourly_net, 2),
                 "ot_hourly_net": round(ot_hourly_net, 2),
                 "hourly_overtime_rate": round(ot_hourly_net, 2),
-                "total_hours": round(m["total_hours"], 1),
-                "weekday_ot_hours": round(weekday_ot, 1),
-                "sunday_ot_hours": round(sunday_ot, 1),
-                "sunday_ot_cost": round(sunday_ot * ot_hourly_net, 2),
-                "all_ot_hours": round(all_ot_hours, 1),
-                "total_ot_hours": round(all_ot_hours, 1),
+                "total_hours": round(m["total_hours"], 2),
+                "weekday_ot_hours": round(weekday_ot, 2),
+                "missing_hours": round(missing_hours, 2),
+                "net_weekday_ot_hours": round(net_weekday_ot_hours, 2),
+                "weekday_ot_cost": round(weekday_ot_cost, 2),
+                "missing_deduction_cost": round(missing_deduction_cost, 2),
+                "gross_weekday_ot_cost": round(gross_weekday_ot_cost, 2),
+                "sunday_ot_hours": round(sunday_ot, 2),
+                "sunday_ot_cost": round(sunday_ot_cost, 2),
+                "all_ot_hours": round(all_ot_hours, 2),
+                "total_ot_hours": round(all_ot_hours, 2),
                 "ot_cost": round(ot_cost, 2),
                 "overtime_cost": round(ot_cost, 2),
                 "bonus_hours": round(m["total_bonus_hours"], 1),
@@ -1435,16 +1490,25 @@ class PDKSEngine:
         top_intensity_dept = max(sorted_depts, key=lambda x: x["avg_ot_hours_per_worker"])["department"] if sorted_depts else "-"
         
         total_all_ot = sum(p["all_ot_hours"] for p in personnel_costs)
+        total_weekday_ot_all = sum(p["weekday_ot_hours"] for p in personnel_costs)
+        total_missing_all = sum(p["missing_hours"] for p in personnel_costs)
+        total_net_weekday_ot_all = sum(p["net_weekday_ot_hours"] for p in personnel_costs)
         avg_rate = round(total_ot_cost / total_all_ot, 2) if total_all_ot > 0 else 0.0
 
         summary_dict = {
             "total_active_personnel": len(personnel_costs),
             "total_personnel_active": len(personnel_costs),
             "total_hours": round(sum(p["total_hours"] for p in personnel_costs), 1),
-            "total_ot_hours": round(total_all_ot, 1),
-            "total_overtime_hours": round(total_all_ot, 1),
+            "total_ot_hours": round(total_all_ot, 2),
+            "total_overtime_hours": round(total_all_ot, 2),
+            "total_weekday_ot_hours": round(total_weekday_ot_all, 2),
+            "total_missing_hours": round(total_missing_all, 2),
+            "total_missing_deduction": round(total_missing_deduction, 2),
+            "total_net_weekday_ot_hours": round(total_net_weekday_ot_all, 2),
             "total_bonus_hours": round(sum(p["bonus_hours"] for p in personnel_costs), 1),
             "total_base_cost": round(total_base_cost, 2),
+            "total_weekday_ot_cost": round(total_weekday_ot_cost, 2),
+            "total_sunday_ot_cost": round(total_sunday_ot_cost, 2),
             "total_ot_cost": round(total_ot_cost, 2),
             "total_overtime_cost": round(total_ot_cost, 2),
             "total_bonus_cost": round(total_bonus_cost, 2),
