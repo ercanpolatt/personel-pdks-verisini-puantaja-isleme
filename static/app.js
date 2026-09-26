@@ -856,6 +856,10 @@ async function submitBulkCustomHours(e) {
     return;
   }
   const hours = parseFloat(document.getElementById('bulkCustomHoursInput').value);
+  if (isNaN(hours) || hours < 0 || hours > 24) {
+    showToast('Bir günde 24 saatten fazla çalışma yazılamaz! Lütfen 0 ile 24 saat arasında bir değer girin.', 'error');
+    return;
+  }
   const resolver = document.getElementById('bulkCustomResolver').value || 'Vardiya Amiri / Toplu Onay';
   const note = document.getElementById('bulkCustomNote').value || `${hours}s toplu amir mesai onayı`;
 
@@ -1821,6 +1825,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const nameKey = document.getElementById('modalNameKey').value;
       const day = parseInt(document.getElementById('modalDay').value);
       const approvedHours = parseFloat(document.getElementById('modalApprovedHours').value);
+      if (isNaN(approvedHours) || approvedHours < 0 || approvedHours > 24) {
+        showToast('Bir günde 24 saatten fazla çalışma yazılamaz! Lütfen 0 ile 24 saat arasında bir değer girin.', 'error');
+        return;
+      }
       const note = document.getElementById('modalNote').value;
       const resolver = document.getElementById('modalResolver').value;
 
@@ -1837,7 +1845,10 @@ document.addEventListener('DOMContentLoaded', () => {
           })
         });
 
-        if (!res.ok) throw new Error('Onay işlemi kaydedilemedi');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Onay işlemi kaydedilemedi');
+        }
         const data = await res.json();
         showToast(data.message || 'İstisna onaylandı!', 'success');
         closeModal('modalResolveException');
@@ -1848,6 +1859,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // 4a. Canlı 24 Saat Giriş Koruması (Elle 24'ten büyük yazılmasını engeller)
+  const enforceMax24Input = (inputElId) => {
+    const el = document.getElementById(inputElId);
+    if (!el) return;
+    el.addEventListener('input', (e) => {
+      let val = parseFloat(e.target.value);
+      if (val > 24) {
+        e.target.value = 24;
+        showToast('Bir günde 24 saatten fazla çalışma yazılamaz! Değer 24 saate sınırlandı.', 'warning');
+      } else if (val < 0) {
+        e.target.value = 0;
+      }
+    });
+  };
+  enforceMax24Input('modalApprovedHours');
+  enforceMax24Input('bulkCustomHoursInput');
 
   // 4b. Toplu İşlem & Akıllı Amir Onay Masası Dinleyicileri
   const checkAllExceptions = document.getElementById('checkAllExceptions');

@@ -1300,8 +1300,8 @@
 
           <div class="form-group">
             <label for="modalApprovedHours">Onaylanan Günlük Çalışma Saati (Saat)</label>
-            <input type="number" step="0.5" id="modalApprovedHours" class="form-input" required value="7.5">
-            <small class="form-hint">Standart tam gün: 7.5 saat (1.5s mola düşülmüş net süre)</small>
+            <input type="number" step="0.5" min="0" max="24" id="modalApprovedHours" class="form-input" required value="7.5">
+            <small class="form-hint">Standart tam gün: 7.5 saat | Bir günde maksimum 24.0 saat girilebilir.</small>
           </div>
 
           <div class="form-group">
@@ -1341,7 +1341,7 @@
           <div class="form-group">
             <label for="bulkCustomHoursInput">Uygulanacak Günlük Çalışma Saati (Saat)</label>
             <input type="number" step="0.5" id="bulkCustomHoursInput" class="form-input" required value="7.5" min="0" max="24">
-            <small class="form-hint">Tüm seçilen personele bu saat yazılacak ve puantaj tablosu otomatik güncellenecektir.</small>
+            <small class="form-hint">Tüm seçilen personele bu saat yazılacak (0 ile 24.0 saat arası).</small>
           </div>
 
           <div class="form-group">

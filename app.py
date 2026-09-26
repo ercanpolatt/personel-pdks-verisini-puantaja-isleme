@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Body, Reque
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pdks_engine import PDKSEngine, fmt_hours_tr, norm_name_key, clean_display_text
 from slip_builder import generate_single_slip_html, render_slips_document
@@ -517,17 +517,24 @@ class EngineManager:
                 rec["resolved_note"] = res.get("note", "")
                 rec["resolved_at"] = res.get("timestamp", "")
                 rec["approved_hours"] = res.get("approved_hours", rec["final_hours"])
-                # Eğer amir saat onayladıysa final_hours'ı güncelle
+                # Eğer amir saat onayladıysa final_hours'ı güncelle (Maks. 24 saat kuralı)
                 if "approved_hours" in res and res["approved_hours"] is not None:
-                    diff = float(res["approved_hours"]) - rec["final_hours"]
-                    rec["final_hours"] = float(res["approved_hours"])
-                    if rec["final_hours"] <= 7.5:
-                        rec["base_hours"] = rec["final_hours"]
+                    clean_h = min(24.0, max(0.0, float(res["approved_hours"])))
+                    rec["approved_hours"] = clean_h
+                    rec["final_hours"] = clean_h
+                    if clean_h <= 7.5:
+                        rec["base_hours"] = clean_h
+                        rec["overtime_hours"] = 0.0
                     else:
                         rec["base_hours"] = 7.5
-                        rec["overtime_hours"] = rec["final_hours"] - 7.5
+                        rec["overtime_hours"] = round(clean_h - 7.5, 2)
 
     def resolve_exception(self, name_key: str, day: int, approved_hours: float, note: str, resolved_by: str = "Vardiya Amiri"):
+        approved_hours = float(approved_hours)
+        if approved_hours < 0.0 or approved_hours > 24.0:
+            raise ValueError("Bir günde 24 saatten fazla çalışma süresi yazılamaz! (Maksimum 24.0 saat)")
+        approved_hours = min(24.0, max(0.0, approved_hours))
+        
         key = f"{name_key}:{day}"
         self.resolved_exceptions[key] = {
             "name_key": name_key,
@@ -543,7 +550,7 @@ class EngineManager:
         return self.resolved_exceptions[key]
 
     def bulk_resolve_exceptions(self, items: List[Dict[str, Any]], resolved_by: str = "Vardiya Amiri / Toplu Onay") -> int:
-        """Birden çok istisna kaydını tek işlemde amir onayına alır ve puantajı günceller."""
+        """Birden çok istisna kaydını tek işlemde amir onayına alır ve puantajı günceller (Maks. 24s korumalı)."""
         now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
         count = 0
         for item in items:
@@ -553,6 +560,10 @@ class EngineManager:
                 continue
             key = f"{name_key}:{day}"
             approved_hours = float(item.get("approved_hours", 7.5))
+            if approved_hours < 0.0 or approved_hours > 24.0:
+                raise ValueError(f"Geçersiz süre ({approved_hours}s): Bir günde 24 saatten fazla çalışma süresi yazılamaz!")
+            approved_hours = min(24.0, max(0.0, approved_hours))
+            
             note = item.get("note") or "Toplu Amir Onayı"
             item_resolved_by = item.get("resolved_by") or resolved_by
             self.resolved_exceptions[key] = {
@@ -678,14 +689,14 @@ class LoginRequest(BaseModel):
 class ExceptionResolveRequest(BaseModel):
     name_key: str
     day: int
-    approved_hours: float
+    approved_hours: float = Field(..., ge=0.0, le=24.0, description="Onaylanan günlük saat (0 ile 24 saat arasında olmalıdır)")
     note: str
     resolved_by: Optional[str] = "Vardiya Amiri"
 
 class BulkExceptionResolveItem(BaseModel):
     name_key: str
     day: int
-    approved_hours: float
+    approved_hours: float = Field(..., ge=0.0, le=24.0, description="Onaylanan günlük saat (0 ile 24 saat arasında olmalıdır)")
     note: Optional[str] = "Toplu Amir Onayı"
     resolved_by: Optional[str] = "Vardiya Amiri / Toplu Onay"
 
@@ -1164,13 +1175,16 @@ def resolve_exception_endpoint(payload: ExceptionResolveRequest, request: Reques
     if not user.get("can_resolve_exceptions", False):
         raise HTTPException(status_code=403, detail="İstisna onaylama yetkiniz bulunmamaktadır.")
     mgr = EngineManager.get_instance()
-    saved = mgr.resolve_exception(
-        name_key=payload.name_key,
-        day=payload.day,
-        approved_hours=payload.approved_hours,
-        note=payload.note,
-        resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri"
-    )
+    try:
+        saved = mgr.resolve_exception(
+            name_key=payload.name_key,
+            day=payload.day,
+            approved_hours=payload.approved_hours,
+            note=payload.note,
+            resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri"
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     return {"status": "success", "message": "İstisna amir tarafından onaylandı ve puantaj güncellendi.", "data": saved}
 
 @app.post("/api/exceptions/bulk-resolve")
@@ -1190,7 +1204,10 @@ def bulk_resolve_exceptions_endpoint(payload: BulkExceptionResolveRequest, reque
             "note": note,
             "resolved_by": resolved_by
         })
-    resolved_count = mgr.bulk_resolve_exceptions(items_to_resolve, resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri / Toplu Onay")
+    try:
+        resolved_count = mgr.bulk_resolve_exceptions(items_to_resolve, resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri / Toplu Onay")
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     return {
         "status": "success",
         "message": f"{resolved_count} istisna kaydı başarıyla toplu onaylandı ve puantaj güncellendi.",

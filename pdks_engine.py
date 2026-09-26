@@ -546,6 +546,10 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             
     ot_hours = step * 0.5
     total_hours = base_hours + ot_hours
+    # Bir günde 24 saatten fazla çalışma yazılamaz kuralı:
+    if total_hours > 24.0:
+        total_hours = 24.0
+        ot_hours = max(0.0, 24.0 - base_hours)
     return ShiftResult(total_hours, base_hours, ot_hours, break_hours, effective_g, effective_c, gross_hours)
 
 def calc_factory_worked_hours(g_saat_str: str, c_saat_str: str, sure_str: str = "", is_office: bool = False) -> Tuple[float, float]:
@@ -1056,6 +1060,11 @@ class PDKSEngine:
                 status_type = "BÖLÜM_PRİMLİ"
                 audit_note = f"{audit_note} | {prim_msg}" if audit_note else prim_msg
 
+            # Bir günde 24 saatten fazla çalışma yazılamaz kuralı:
+            if tot_h > 24.0:
+                tot_h = 24.0
+                ot_h = max(0.0, 24.0 - base_h)
+
             rec = {
                 "sno": len(self.audit_records) + 1,
                 "tarih": date_str,
@@ -1261,7 +1270,7 @@ class PDKSEngine:
             for d in range(1, self.days_in_month + 1):
                 rec = self.daily_results.get((name_k, d))
                 if rec and rec["final_hours"] > 0:
-                    h = rec["final_hours"]
+                    h = min(24.0, max(0.0, float(rec["final_hours"])))
                     row["daily_hours"][d] = h
                     row["total_work_days"] += 1
                     row["total_base_hours"] += rec["base_hours"]

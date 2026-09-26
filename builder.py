@@ -16,6 +16,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from pdks_engine import (
     PDKSEngine,
@@ -261,8 +262,8 @@ def build_puantaj_workbook(
                 
             rec = emp_pdks_daily.get((name_k, d))
             if rec and rec["final_hours"] > 0:
-                hours = rec["final_hours"]
-                fazla = rec["overtime_hours"]
+                hours = min(24.0, max(0.0, float(rec["final_hours"])))
+                fazla = min(24.0, max(0.0, float(rec["overtime_hours"])))
                 cell.value = hours
                 
                 # Görsel Renklendirme ve Hücre Notları
@@ -411,6 +412,31 @@ def build_puantaj_workbook(
 
     ws_p.freeze_panes = "D4"
 
+    # -------------------------------------------------------------------------
+    # GÜNLÜK ÇALIŞMA SAATİ KORUMASI (Maks. 24 Saat Kuralı):
+    # Bir günde 24 saatten fazla çalışma yazılamaz!
+    # Excel içinde elle 24 saatten fazla yazılmak istense dahi kesin olarak engeller.
+    # -------------------------------------------------------------------------
+    first_day_col = day_cols[0][0]
+    last_day_col = day_cols[-1][0]
+    last_data_r = tot_r_puantaj - 1
+    
+    dv_max24 = DataValidation(
+        type="decimal",
+        operator="between",
+        formula1="0",
+        formula2="24",
+        allow_blank=True,
+        showInputMessage=True,
+        promptTitle="Günlük Çalışma Süresi",
+        prompt="Çalışma süresi 0 ile 24 saat arasında olmalıdır.",
+        showErrorMessage=True,
+        errorTitle="Geçersiz Süre (Maksimum 24 Saat)",
+        error="HATA: Bir günde 24 saatten fazla çalışma süresi yazılamaz! Lütfen 0 ile 24.0 saat arasında bir değer giriniz."
+    )
+    ws_p.add_data_validation(dv_max24)
+    dv_max24.add(f"{first_day_col}4:{last_day_col}{last_data_r}")
+
     # =========================================================================
     # SAYFA 2: Eksik_Basim_Raporu (İstisna & İnsan Kontrolü Raporu)
     # =========================================================================
@@ -463,6 +489,21 @@ def build_puantaj_workbook(
                 ws_miss[f"{cl}{r_idx}"].alignment = align_center
             if c_idx not in (6, 7, 10):
                 ws_miss[f"{cl}{r_idx}"].alignment = align_center
+
+    # Eksik Basım Raporunda L sütunu (Puantaja Yazılan Saat) için de 24 saat koruması:
+    if len(engine.exception_records) > 0:
+        dv_miss24 = DataValidation(
+            type="decimal",
+            operator="between",
+            formula1="0",
+            formula2="24",
+            allow_blank=True,
+            showErrorMessage=True,
+            errorTitle="Geçersiz Süre (Maksimum 24 Saat)",
+            error="HATA: Bir günde 24 saatten fazla çalışma süresi yazılamaz! Lütfen 0 ile 24.0 saat arasında bir değer giriniz."
+        )
+        ws_miss.add_data_validation(dv_miss24)
+        dv_miss24.add(f"L2:L{len(engine.exception_records)+1}")
 
     # =========================================================================
     # SAYFA 3: Bolum_Prim_Mesai_Raporu (Balık Dolum/Kesim & Üretim Prim Denetimi)
