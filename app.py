@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from pdks_engine import PDKSEngine, fmt_hours_tr, norm_name_key, clean_display_text
 from slip_builder import generate_single_slip_html, render_slips_document
 from erp_exporter import ERPExporter
+from db_manager import DatabaseManager, MONTH_NAMES_TR
 
 def _clean_str(val: Any) -> Optional[str]:
     if val is None or not isinstance(val, str):
@@ -498,6 +499,11 @@ class EngineManager:
         self.apply_resolved_exceptions()
         self.matrix = self.engine.get_summary_matrix()
         print(f"[EngineManager] Başarıyla yüklendi: {len(self.engine.personnel_list)} personel, {len(self.engine.audit_records)} hareket.")
+        try:
+            db = DatabaseManager()
+            db.seed_initial_data(self.engine)
+        except Exception as e:
+            print(f"[EngineManager] Veritabanı başlatma uyarısı: {e}")
 
     def apply_resolved_exceptions(self):
         """Kayıtlı amir onaylarını motor sonuçlarına uygular."""
@@ -710,6 +716,24 @@ class BulkExceptionResolveRequest(BaseModel):
 class RuleUpdateRequest(BaseModel):
     rules: Dict[str, Any]
 
+class PeriodRolloverRequest(BaseModel):
+    current_period_key: Optional[str] = "2026-09"
+
+class IcraCreateUpdateRequest(BaseModel):
+    tc: Optional[str] = ""
+    name_key: str
+    ad_soyad: str
+    bolum: Optional[str] = "Genel"
+    sirket: Optional[str] = "Fide Konserve"
+    dosya_no: Optional[str] = ""
+    toplam_borc: float = Field(..., ge=0.0)
+    kesilen_kumulatif: Optional[float] = 0.0
+    kalan_borc: Optional[float] = None
+    aylik_kesinti_orani: Optional[float] = 0.25
+    durum: Optional[str] = "AKTİF"
+    iban: Optional[str] = ""
+    aciklama: Optional[str] = ""
+
 # -----------------------------------------------------------------------------
 # AUTH & KİMLİK DOĞRULAMA ENDPOINTLERİ
 # -----------------------------------------------------------------------------
@@ -750,6 +774,82 @@ def get_available_users_endpoint():
             "allowed_tabs": u["allowed_tabs"]
         })
     return {"users": users_list}
+
+# -----------------------------------------------------------------------------
+# ÇOKLU AY ARŞİVİ, 270 SAAT YILLIK MESAİ VE İCRA TAKİP ENDPOINTLERİ
+# -----------------------------------------------------------------------------
+@app.get("/api/archive/periods")
+def list_periods_endpoint(request: Request = None):
+    """Kayıtlı tüm dönemleri ve durumlarını listeler."""
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+    periods = db.get_all_periods()
+    active_key = f"{mgr.target_year}-{mgr.target_month:02d}"
+    return {
+        "status": "success",
+        "active_period_key": active_key,
+        "periods": periods
+    }
+
+@app.get("/api/archive/periods/{period_key}")
+def get_period_details_endpoint(period_key: str, request: Request = None):
+    """Belirli bir dönemin özetini ve kayıtlarını getirir."""
+    db = DatabaseManager()
+    details = db.get_period_details(period_key)
+    if not details:
+        raise HTTPException(status_code=404, detail=f"Dönem bulunamadı: {period_key}")
+    return {"status": "success", "period": details}
+
+@app.post("/api/archive/periods/close-and-rollover")
+def close_and_rollover_period_endpoint(payload: PeriodRolloverRequest = Body(...), request: Request = None):
+    """Aktif dönemi kapatır, icra borçlarını düşer, bakiyeleri devreder ve yeni ayı başlatır."""
+    user = get_current_user_from_request(request)
+    if not (user.get("can_edit_rules") or user.get("role") in ("admin", "accounting", "hr")):
+        raise HTTPException(status_code=403, detail="Dönem kapatma ve devir yetkiniz bulunmamaktadır.")
+    
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+    
+    curr_key = payload.current_period_key or f"{mgr.target_year}-{mgr.target_month:02d}"
+    try:
+        res = db.close_and_rollover_period(curr_key)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/archive/cumulative-overtime")
+def get_cumulative_overtime_endpoint(year: int = Query(2026), request: Request = None):
+    """Yıllık 270 saat fazla mesai kütüğü (4857 SK Md. 41) gerçek zamanlı kümülatif raporunu döner."""
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+    return db.get_cumulative_overtime_report(year)
+
+@app.get("/api/archive/icra")
+def get_icra_records_endpoint(status: Optional[str] = Query("ALL"), request: Request = None):
+    """Tüm icra ve maaş haczi takip kayıtlarını ve ödeme/devir hareketlerini döner."""
+    user = get_current_user_from_request(request)
+    if not user.get("can_view_finance", False):
+        raise HTTPException(status_code=403, detail="İcra takip masasını görüntüleme yetkiniz bulunmamaktadır.")
+    
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+    return db.get_icra_records(status)
+
+@app.post("/api/archive/icra")
+def add_update_icra_endpoint(payload: IcraCreateUpdateRequest, request: Request = None):
+    """Yeni icra dosyası ekler veya var olan icra kaydını günceller."""
+    user = get_current_user_from_request(request)
+    if not user.get("can_view_finance", False):
+        raise HTTPException(status_code=403, detail="İcra dosyası yönetme yetkiniz bulunmamaktadır.")
+    
+    db = DatabaseManager()
+    data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    return db.add_or_update_icra(data_dict)
+
 
 # -----------------------------------------------------------------------------
 # API ENDPOINTLERİ
@@ -816,6 +916,8 @@ def get_stats():
 
     return {
         "period": f"{eng.target_month:02d}.{eng.target_year}",
+        "active_period_key": f"{eng.target_year}-{eng.target_month:02d}",
+        "active_period_name": f"{MONTH_NAMES_TR.get(eng.target_month, str(eng.target_month))} {eng.target_year}",
         "month": eng.target_month,
         "year": eng.target_year,
         "days_in_month": eng.days_in_month,

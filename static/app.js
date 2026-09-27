@@ -84,6 +84,26 @@ const AppState = {
     totalCount: 0,
     items: [],
     departments: []
+  },
+
+  // Çoklu Ay & Arşiv Durumu (SQLite Persistence)
+  archive: {
+    activePeriodKey: '2026-09',
+    periods: [],
+    cumulativeOvertime: {
+      year: 2026,
+      items: [],
+      filteredItems: [],
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+      search: '',
+      riskFilter: 'all'
+    },
+    icra: {
+      items: [],
+      kpis: {}
+    }
   }
 };
 
@@ -193,8 +213,14 @@ function switchTab(tabId) {
   if (tabId === 'tab-matrix') loadMatrix();
   if (tabId === 'tab-exceptions') loadExceptions();
   if (tabId === 'tab-bonuses') loadBonuses();
-  if (tabId === 'tab-financial') loadFinancialRadar();
-  if (tabId === 'tab-compliance') loadComplianceRadar();
+  if (tabId === 'tab-financial') {
+    loadFinancialRadar();
+    loadIcraRecords();
+  }
+  if (tabId === 'tab-compliance') {
+    loadComplianceRadar();
+    loadCumulativeOvertime();
+  }
   if (tabId === 'tab-reports') loadRules();
 }
 
@@ -210,7 +236,13 @@ async function loadStats() {
 
     // Header & KPI Değerleri
     const periodText = document.getElementById('periodText');
-    if (periodText) periodText.innerText = `${data.period} Dönemi`;
+    if (periodText) periodText.innerText = `${data.active_period_name || data.period} Dönemi`;
+
+    const periodStatusBadge = document.getElementById('periodStatusBadge');
+    if (periodStatusBadge) {
+      periodStatusBadge.innerText = 'Aktif';
+      periodStatusBadge.className = 'period-status-pill';
+    }
 
     const statusLabel = document.getElementById('statusLabel');
     if (statusLabel) statusLabel.innerText = `PDKS Motoru Aktif (${data.total_personnel} Personel)`;
@@ -2098,6 +2130,57 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Çoklu Ay & Dönem Seçici Dinleyicisi
+  const headerPeriodBadge = document.getElementById('headerPeriodBadge');
+  if (headerPeriodBadge) {
+    headerPeriodBadge.addEventListener('click', openPeriodSwitcher);
+  }
+
+  // İcra & Maaş Haczi Dinleyicileri
+  const btnOpenNewIcra = document.getElementById('btnOpenNewIcraModal');
+  if (btnOpenNewIcra) {
+    btnOpenNewIcra.addEventListener('click', openNewIcraModal);
+  }
+
+  // 270 Saat Yıllık Fazla Mesai Kütüğü Dinleyicileri
+  const otSearchInput = document.getElementById('overtimeSearchInput');
+  if (otSearchInput) {
+    otSearchInput.addEventListener('input', debounce((e) => {
+      AppState.archive.cumulativeOvertime.search = e.target.value.trim();
+      AppState.archive.cumulativeOvertime.page = 1;
+      applyCumulativeOvertimeFilters();
+    }, 300));
+  }
+
+  const otStatusFilter = document.getElementById('overtimeStatusFilter');
+  if (otStatusFilter) {
+    otStatusFilter.addEventListener('change', (e) => {
+      AppState.archive.cumulativeOvertime.riskFilter = e.target.value;
+      AppState.archive.cumulativeOvertime.page = 1;
+      applyCumulativeOvertimeFilters();
+    });
+  }
+
+  const btnOtPrev = document.getElementById('btnOvertimePrev');
+  if (btnOtPrev) {
+    btnOtPrev.addEventListener('click', () => {
+      if (AppState.archive.cumulativeOvertime.page > 1) {
+        AppState.archive.cumulativeOvertime.page--;
+        renderCumulativeOvertimeTable();
+      }
+    });
+  }
+
+  const btnOtNext = document.getElementById('btnOvertimeNext');
+  if (btnOtNext) {
+    btnOtNext.addEventListener('click', () => {
+      if (AppState.archive.cumulativeOvertime.page < AppState.archive.cumulativeOvertime.totalPages) {
+        AppState.archive.cumulativeOvertime.page++;
+        renderCumulativeOvertimeTable();
+      }
+    });
+  }
+
   // Başlangıç Yüklemesi: Önce kullanıcı yetkilerini çek, sonra verileri yükle
   initCurrentUser().then(() => {
     loadStats();
@@ -2250,9 +2333,444 @@ async function switchRole(username, password = null) {
     if (AppState.activeTab === 'tab-matrix') loadMatrix();
     if (AppState.activeTab === 'tab-exceptions') loadExceptions();
     if (AppState.activeTab === 'tab-bonuses') loadBonuses();
-    if (AppState.activeTab === 'tab-finance') loadFinancialRadar();
-    if (AppState.activeTab === 'tab-compliance') loadComplianceRadar();
+    if (AppState.activeTab === 'tab-finance') {
+      loadFinancialRadar();
+      loadIcraRecords();
+    }
+    if (AppState.activeTab === 'tab-compliance') {
+      loadComplianceRadar();
+      loadCumulativeOvertime();
+    }
   } catch (err) {
     showToast('Hata: ' + err.message, 'error');
   }
 }
+
+// ============================================================================
+// 10. ÇOKLU AY ARŞİVİ, 270 SAAT MESAİ KÜTÜĞÜ VE İCRA MODÜLÜ (SQLITE PERSISTENCE)
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// A) DÖNEM SEÇİCİ & ÇOKLU AY ARŞİVİ
+// ----------------------------------------------------------------------------
+async function openPeriodSwitcher() {
+  const container = document.getElementById('periodListContainer');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Dönem kayıtları yükleniyor...</div>';
+  openModal('modalPeriodSwitcher');
+
+  try {
+    const res = await fetch('/api/archive/periods');
+    if (!res.ok) throw new Error('Dönemler alınamadı');
+    const data = await res.json();
+    AppState.archive.periods = data.periods || [];
+
+    if (AppState.archive.periods.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Kayıtlı arşiv dönemi bulunamadı.</div>';
+      return;
+    }
+
+    let html = '';
+    AppState.archive.periods.forEach(p => {
+      const isActive = p.status === 'active';
+      const statusBadge = isActive
+        ? '<span class="period-status-pill">Aktif Dönem</span>'
+        : '<span class="period-status-pill status-locked">Arşiv / Kilitli</span>';
+      const pName = p.name || p.period_name || `${p.period_key} Dönemi`;
+      const pCount = p.active_personnel_count || p.total_personnel || 250;
+
+      html += `
+        <div class="period-item-card ${isActive ? 'is-active' : ''}">
+          <div class="period-item-info">
+            <div class="period-item-icon">${isActive ? '📅' : '🔒'}</div>
+            <div class="period-item-meta">
+              <span class="period-item-title">
+                ${pName}
+                ${statusBadge}
+              </span>
+              <span class="period-item-desc">
+                ${p.year} Yılı • ${p.month}. Ay • ${pCount} Personel Kaydı
+              </span>
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'}" onclick="selectArchivePeriod('${p.period_key}')">
+              ${isActive ? 'İnceleniyor' : 'Görüntüle'}
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<div style="text-align:center; color: var(--color-danger); padding: 20px;">Hata: ${err.message}</div>`;
+  }
+}
+
+async function selectArchivePeriod(periodKey) {
+  try {
+    const res = await fetch(`/api/archive/periods/${periodKey}`);
+    if (!res.ok) throw new Error('Dönem verisi alınamadı');
+    const data = await res.json();
+    closeModal('modalPeriodSwitcher');
+    const p = data.period || {};
+    const pName = p.name || p.period_name || periodKey;
+    const recCount = (p.records && p.records.length) || p.active_personnel_count || 250;
+    showToast(`🗄️ ${pName} dönemi başarıyla yüklendi (${recCount} personel)`, 'success');
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
+
+async function handlePeriodRollover() {
+  const activePeriod = (AppState.archive.periods.find(p => p.status === 'active') || {}).period_key || '2026-09';
+  const periodParts = activePeriod.split('-');
+  const y = parseInt(periodParts[0]);
+  const m = parseInt(periodParts[1]);
+  const nextM = m === 12 ? 1 : m + 1;
+  const nextY = m === 12 ? y + 1 : y;
+  const nextPeriodKey = `${nextY}-${String(nextM).padStart(2, '0')}`;
+
+  const confirmMsg = `${activePeriod} dönemi kilitlenecek ve ${nextPeriodKey} dönemine devredilecektir.\n\nİcra kesintileri borçlardan otomatik düşülecek ve kalan bakiyeler sonraki aya devredilecektir.\n\nDevam etmek istiyor musunuz?`;
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const res = await fetch('/api/archive/periods/close-and-rollover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_period_key: activePeriod
+      })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Dönem devri yapılamadı');
+    }
+
+    const data = await res.json();
+    closeModal('modalPeriodSwitcher');
+    showToast(`✅ ${data.message}`, 'success', 5000);
+
+    // Verileri güncelle
+    loadStats();
+    loadIcraRecords();
+    loadCumulativeOvertime();
+  } catch (err) {
+    showToast('Devir Hatası: ' + err.message, 'error');
+  }
+}
+
+// ----------------------------------------------------------------------------
+// B) 270 SAAT YILLIK FAZLA MESAİ KÜTÜĞÜ (MD. 41 SİCİLİ)
+// ----------------------------------------------------------------------------
+async function loadCumulativeOvertime() {
+  try {
+    const res = await fetch(`/api/archive/cumulative-overtime?year=${AppState.archive.cumulativeOvertime.year}`);
+    if (!res.ok) throw new Error('Yıllık mesai kütüğü alınamadı');
+    const data = await res.json();
+
+    AppState.archive.cumulativeOvertime.items = data.personnel || data.records || [];
+
+    // KPI Güncellemesi
+    if (data.kpis) {
+      const elEx = document.getElementById('valOtCountExceeded');
+      if (elEx) elEx.innerHTML = `${data.kpis.exceeded_count || 0} <small>kişi</small>`;
+
+      const elCrit = document.getElementById('valOtCountCritical');
+      if (elCrit) elCrit.innerHTML = `${data.kpis.critical_count || 0} <small>kişi</small>`;
+
+      const elWarn = document.getElementById('valOtCountWarning');
+      if (elWarn) elWarn.innerHTML = `${data.kpis.warning_count || 0} <small>kişi</small>`;
+
+      const elSafe = document.getElementById('valOtCountSafe');
+      if (elSafe) elSafe.innerHTML = `${data.kpis.safe_count || 0} <small>kişi</small>`;
+    }
+
+    applyCumulativeOvertimeFilters();
+  } catch (err) {
+    console.error('Yıllık mesai yükleme hatası:', err);
+  }
+}
+
+function applyCumulativeOvertimeFilters() {
+  const st = AppState.archive.cumulativeOvertime;
+  let filtered = [...st.items];
+
+  // Arama filtresi
+  if (st.search) {
+    const q = st.search.toLowerCase();
+    filtered = filtered.filter(item => {
+      const name = (item.ad_soyad || item.name || '').toLowerCase();
+      const tc = item.tc || item.tc_no || '';
+      const dept = (item.bolum || item.department || '').toLowerCase();
+      return name.includes(q) || tc.includes(q) || dept.includes(q);
+    });
+  }
+
+  // Risk filtresi
+  if (st.riskFilter !== 'all') {
+    filtered = filtered.filter(item => item.risk_status === st.riskFilter);
+  }
+
+  st.filteredItems = filtered;
+  st.totalPages = Math.ceil(filtered.length / st.pageSize) || 1;
+  if (st.page > st.totalPages) st.page = 1;
+
+  renderCumulativeOvertimeTable();
+}
+
+function renderCumulativeOvertimeTable() {
+  const st = AppState.archive.cumulativeOvertime;
+  const tbody = document.getElementById('overtimeRegisterTableBody');
+  if (!tbody) return;
+
+  const startIdx = (st.page - 1) * st.pageSize;
+  const pageItems = st.filteredItems.slice(startIdx, startIdx + st.pageSize);
+
+  if (pageItems.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="20" style="text-align:center; padding: 36px; color: var(--text-muted);">Arama kriterlerine uygun fazla mesai kaydı bulunamadı.</td></tr>';
+    return;
+  }
+
+  let html = '';
+  pageItems.forEach((r, idx) => {
+    const rowNum = startIdx + idx + 1;
+    const totOt = r.total_ot_hours ?? r.cumulative_total ?? 0;
+    const remLimit = r.remaining_limit_hours ?? r.remaining_limit ?? Math.max(0, 270 - totOt);
+    const pct = Math.min(100, Math.round((totOt / 270.0) * 100));
+
+    let barClass = 'ot-bar-safe';
+    let badgeClass = 'badge-safe';
+    let statusText = '🟢 Güvenli';
+
+    if (r.risk_status === 'EXCEEDED') {
+      barClass = 'ot-bar-exceeded';
+      badgeClass = 'badge-exceeded-ot';
+      statusText = '🚨 Kota Aşıldı';
+    } else if (r.risk_status === 'CRITICAL') {
+      barClass = 'ot-bar-critical';
+      badgeClass = 'badge-critical-ot';
+      statusText = '⚠️ Kritik Eşik';
+    } else if (r.risk_status === 'WARNING') {
+      barClass = 'ot-bar-warning';
+      badgeClass = 'badge-warning-ot';
+      statusText = '🟡 Yaklaşıyor';
+    }
+
+    const renderMonth = (val, isCurrent = false) => {
+      const cls = isCurrent ? 'ot-month-cell highlight-current' : val > 0 ? 'ot-month-cell has-val' : 'ot-month-cell';
+      return `<td class="${cls}">${val > 0 ? fmtHours(val) : '—'}</td>`;
+    };
+
+    html += `
+      <tr>
+        <td style="text-align: center; color: var(--text-dim);">${rowNum}</td>
+        <td style="font-family: var(--font-mono); font-size: 11.5px;">${r.tc || r.tc_no || '—'}</td>
+        <td style="font-weight: 600; color: #f8fafc;">${r.ad_soyad || r.name}</td>
+        <td style="color: var(--text-secondary); font-size: 11.5px;">${r.bolum || r.department || '—'}</td>
+        ${renderMonth(r.m01)}
+        ${renderMonth(r.m02)}
+        ${renderMonth(r.m03)}
+        ${renderMonth(r.m04)}
+        ${renderMonth(r.m05)}
+        ${renderMonth(r.m06)}
+        ${renderMonth(r.m07)}
+        ${renderMonth(r.m08)}
+        ${renderMonth(r.m09, true)}
+        ${renderMonth(r.m10)}
+        ${renderMonth(r.m11)}
+        ${renderMonth(r.m12)}
+        <td style="text-align: right; font-weight: 700; color: #38bdf8;">${fmtHours(totOt)}s</td>
+        <td style="text-align: right; font-weight: 600; color: ${remLimit <= 0 ? '#f43f5e' : '#a3e635'};">${fmtHours(remLimit)}s</td>
+        <td>
+          <div class="ot-progress-wrapper">
+            <div class="ot-progress-track">
+              <div class="ot-progress-bar ${barClass}" style="width: ${pct}%;"></div>
+            </div>
+            <span class="ot-pct-label">%${pct}</span>
+          </div>
+        </td>
+        <td style="text-align: center;">
+          <span class="badge ${badgeClass}">${statusText}</span>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+
+  // Pagination info
+  const pInfo = document.getElementById('overtimePaginationInfo');
+  if (pInfo) {
+    pInfo.innerText = `Gösterilen: ${st.filteredItems.length === 0 ? 0 : startIdx + 1} - ${Math.min(startIdx + st.pageSize, st.filteredItems.length)} / ${st.filteredItems.length} Personel`;
+  }
+  const pDisp = document.getElementById('overtimePageDisplay');
+  if (pDisp) {
+    pDisp.innerText = `Sayfa ${st.page} / ${st.totalPages}`;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// C) İCRA VE MAAŞ HACZİ TAKİP MASASI
+// ----------------------------------------------------------------------------
+async function loadIcraRecords() {
+  try {
+    const res = await fetch(`/api/archive/icra?status=ALL`);
+    if (!res.ok) throw new Error('İcra verileri alınamadı');
+    const data = await res.json();
+
+    AppState.archive.icra.items = data.files || data.records || [];
+    AppState.archive.icra.kpis = data.kpis || {};
+
+    // KPI'lar
+    if (data.kpis) {
+      const k = data.kpis;
+      const elTotal = document.getElementById('valIcraTotalDebt');
+      if (elTotal) elTotal.innerText = fmtCurrency(k.total_debt_tl ?? k.total_initial_debt ?? 0);
+
+      const elMonth = document.getElementById('valIcraMonthDeducted');
+      if (elMonth) elMonth.innerText = fmtCurrency(k.total_deducted_tl ?? k.current_month_deductions ?? 0);
+
+      const elRem = document.getElementById('valIcraRemainingDebt');
+      if (elRem) elRem.innerText = fmtCurrency(k.total_remaining_tl ?? k.total_remaining_debt ?? 0);
+
+      const badgeFiles = document.getElementById('badgeIcraActiveFiles');
+      if (badgeFiles) badgeFiles.innerText = `${k.active_files ?? k.active_files_count ?? 0} Aktif Haciz Dosyası`;
+    }
+
+    renderIcraTable();
+  } catch (err) {
+    console.error('İcra verisi yükleme hatası:', err);
+  }
+}
+
+function renderIcraTable() {
+  const tbody = document.getElementById('icraTableBody');
+  if (!tbody) return;
+
+  const items = AppState.archive.icra.items;
+  if (!items || items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding: 36px; color: var(--text-muted);">Kayıtlı icra veya maaş haczi dosyası bulunamadı.</td></tr>';
+    return;
+  }
+
+  let html = '';
+  items.forEach((r, idx) => {
+    const durum = r.durum || r.status || 'AKTİF';
+    const isClosed = durum === 'KAPANDI' || (r.kalan_borc !== undefined && r.kalan_borc <= 0);
+    const statusBadge = isClosed
+      ? '<span class="badge badge-emerald">KAPANDI</span>'
+      : '<span class="badge badge-rose">AKTİF HACİZ</span>';
+
+    const totalD = r.toplam_borc ?? r.total_debt ?? 0;
+    const dedD = r.kesilen_kumulatif ?? r.deducted_amount ?? 0;
+    const remD = r.kalan_borc ?? r.remaining_balance ?? 0;
+    const monthDed = Math.round(remD * (r.aylik_kesinti_orani || 0.25) * 100) / 100;
+    const nextRem = Math.max(0, round2(remD - monthDed));
+
+    html += `
+      <tr>
+        <td style="text-align: center; color: var(--text-dim);">${idx + 1}</td>
+        <td style="font-family: var(--font-mono); font-weight: 600; color: #f8fafc;">${r.dosya_no || '—'}</td>
+        <td style="font-weight: 600; color: #e2e8f0;">${r.ad_soyad || r.name}</td>
+        <td style="color: var(--text-secondary); font-size: 11.5px;">${r.bolum || r.department || '—'}</td>
+        <td style="font-size: 11.5px; color: var(--text-muted);">${r.sirket || r.icra_dairesi || 'Bergama İcra D.'}</td>
+        <td style="text-align: right; font-weight: 600;">${fmtCurrency(totalD)}</td>
+        <td style="text-align: right; color: #94a3b8;">${fmtCurrency(dedD)}</td>
+        <td style="text-align: right; font-weight: 700; color: #f43f5e;">${fmtCurrency(remD)}</td>
+        <td style="text-align: right; font-weight: 600; color: #38bdf8;">${fmtCurrency(monthDed)}</td>
+        <td style="text-align: right; font-weight: 700; color: #fbbf24;">${fmtCurrency(nextRem)}</td>
+        <td style="text-align: center;">${statusBadge}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function round2(val) {
+  return Math.round(val * 100) / 100;
+}
+
+async function openNewIcraModal() {
+  const sel = document.getElementById('icraPersonnelSelect');
+  if (sel) {
+    sel.innerHTML = '<option value="">Personel seçiniz...</option>';
+    try {
+      const res = await fetch('/api/matrix?page=1&page_size=300');
+      if (res.ok) {
+        const data = await res.json();
+        const items = data.items || [];
+        items.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.tc_no;
+          opt.dataset.name = p.name;
+          opt.dataset.nameKey = p.name_key || p.name;
+          opt.dataset.dept = p.department;
+          opt.textContent = `${p.name} (TC: ${p.tc_no} - ${p.department})`;
+          sel.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      console.error('Personel listesi yüklenemedi:', err);
+    }
+  }
+  openModal('modalNewIcra');
+}
+
+async function handleNewIcraSubmit(e) {
+  e.preventDefault();
+  const sel = document.getElementById('icraPersonnelSelect');
+  const selectedOpt = sel.options[sel.selectedIndex];
+  const tcNo = sel.value;
+  const adSoyad = selectedOpt ? selectedOpt.dataset.name : '';
+  const nameKey = selectedOpt ? selectedOpt.dataset.nameKey : '';
+  const bolum = selectedOpt ? selectedOpt.dataset.dept : 'Genel';
+  const dosyaNo = document.getElementById('icraDosyaNo').value.trim();
+  const icraDairesi = document.getElementById('icraDaire').value.trim();
+  const alacakli = document.getElementById('icraAlacakli').value.trim();
+  const totalDebt = parseFloat(document.getElementById('icraTotalDebt').value);
+
+  if (!tcNo || !dosyaNo || !icraDairesi || isNaN(totalDebt)) {
+    showToast('Lütfen tüm zorunlu alanları eksiksiz doldurun', 'warning');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/archive/icra', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tc: tcNo,
+        name_key: nameKey || adSoyad,
+        ad_soyad: adSoyad,
+        bolum: bolum,
+        sirket: icraDairesi,
+        dosya_no: dosyaNo,
+        toplam_borc: totalDebt,
+        kesilen_kumulatif: 0.0,
+        kalan_borc: totalDebt,
+        aylik_kesinti_orani: 0.25,
+        durum: "AKTİF",
+        aciklama: alacakli
+      })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'İcra kaydı oluşturulamadı');
+    }
+
+    const data = await res.json();
+    closeModal('modalNewIcra');
+    document.getElementById('formNewIcra').reset();
+    showToast(`✅ ${data.message || 'İcra kaydı başarıyla eklendi.'}`, 'success');
+    loadIcraRecords();
+  } catch (err) {
+    showToast('Hata: ' + err.message, 'error');
+  }
+}
+
+

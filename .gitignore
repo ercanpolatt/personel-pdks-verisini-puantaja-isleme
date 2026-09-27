@@ -17,4 +17,5 @@ scratch/
 # Excel geçici ve kilit dosyaları
 ~$*
 *.tmp
+*.db
 

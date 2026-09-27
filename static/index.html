@@ -29,7 +29,7 @@
           <span class="brand-subtitle">PDKS & Puantaj Yönetim Portalı</span>
         </div>
       </div>
-      <div class="header-badge period-badge" id="headerPeriodBadge">
+      <div class="header-badge period-badge clickable-period-badge" id="headerPeriodBadge" title="Dönem Değiştir & Çoklu Ay Arşivini Aç (SQLite)">
         <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
           <line x1="16" y1="2" x2="16" y2="6"/>
@@ -37,6 +37,8 @@
           <line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
         <span id="periodText">Eylül 2026 Dönemi</span>
+        <span class="period-status-pill" id="periodStatusBadge">Aktif</span>
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left: 4px; opacity: 0.7;"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
     </div>
 
@@ -805,6 +807,87 @@
         </div>
       </div>
 
+      <!-- ======================================================================= -->
+      <!-- İCRA & MAAŞ HACZİ TAKİP MASASI (OTOMATİK BORÇ DÜŞÜM & DEVİR MOTORU)      -->
+      <!-- ======================================================================= -->
+      <div class="icra-management-section" style="margin-top: 32px;">
+        <div class="card-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h3 class="card-title">🏛️ Yasal İcra ve Maaş Haczi Takip Masası</h3>
+              <span class="badge badge-rose" id="badgeIcraActiveFiles">11 Aktif Haciz Dosyası</span>
+            </div>
+            <p class="card-desc">Personele ait icra kesintilerinin her ay maaştan düşülüp kalan bakiyenin sonraki aya otomatik devredilmesi ve denetim kütüğü</p>
+          </div>
+          <div class="filter-controls">
+            <button class="btn btn-sm btn-primary" id="btnOpenNewIcraModal">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Yeni İcra Dosyası Ekle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3 Icra KPI Cards -->
+        <div class="kpi-grid kpi-grid-3" style="margin-top: 14px;">
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-rose">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Toplam İcra Borcu</span>
+              <span class="kpi-value" id="valIcraTotalDebt">₺948.854,48</span>
+              <span class="kpi-sub">Fabrika Geneli Kesinleşen Hacizler</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-cyan">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Bu Ay Kesilen / Ödenen</span>
+              <span class="kpi-value" id="valIcraMonthDeducted">₺35.161,56</span>
+              <span class="kpi-sub">Bordrodan İcra Dairesine Aktarılan</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-amber">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Gelecek Aya Devreden Kalan</span>
+              <span class="kpi-value" id="valIcraRemainingDebt">₺560.893,23</span>
+              <span class="kpi-sub">Sonraki Döneme Aktarılan Net Borç</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Icra Table -->
+        <div class="table-responsive-wrapper" style="margin-top: 14px;">
+          <table class="data-table" id="icraTable">
+            <thead>
+              <tr>
+                <th style="width: 45px;">Sıra</th>
+                <th style="width: 140px;">İcra Dosya No</th>
+                <th style="width: 175px;">Adı Soyadı</th>
+                <th style="width: 130px;">Bölüm</th>
+                <th style="width: 130px;">İcra Dairesi / Alacaklı</th>
+                <th style="width: 110px; text-align: right;">Toplam Borç</th>
+                <th style="width: 105px; text-align: right;">Kümülatif Kesilen</th>
+                <th style="width: 110px; text-align: right; color: #f43f5e;">Kalan Borç</th>
+                <th style="width: 105px; text-align: right; color: #38bdf8;">Bu Ayki Kesinti</th>
+                <th style="width: 115px; text-align: right; color: #fbbf24;">Gelecek Aya Devir</th>
+                <th style="width: 95px; text-align: center;">Durum</th>
+              </tr>
+            </thead>
+            <tbody id="icraTableBody">
+              <!-- Injected dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </section>
 
     <!-- ======================================================================= -->
@@ -998,6 +1081,129 @@
           <button class="btn btn-sm btn-outline" id="btnCompliancePrev">Önceki</button>
           <span class="page-display" id="compliancePageDisplay">Sayfa 1 / 1</span>
           <button class="btn btn-sm btn-outline" id="btnComplianceNext">Sonraki</button>
+        </div>
+      </div>
+
+      <!-- ======================================================================= -->
+      <!-- 270 SAAT YILLIK FAZLA MESAİ KÜTÜĞÜ (GERÇEK ZAMANLI SİCİL - MD. 41)       -->
+      <!-- ======================================================================= -->
+      <div class="overtime-audit-section" style="margin-top: 36px;">
+        <div class="card-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h3 class="card-title">⏱️ 4857 SK Md. 41 Yıllık 270 Saat Fazla Mesai Kütüğü (Gerçek Zamanlı Sicil)</h3>
+              <span class="badge badge-purple" id="badgeOvertimeYear">2026 Yılı Sicili</span>
+            </div>
+            <p class="card-desc">Ocak-Aralık arası tüm ayların kümülatif fazla mesai takibi, kalan yasal kota ve teftiş ceza riski analizi</p>
+          </div>
+          <div class="filter-controls">
+            <div class="search-input-group" style="max-width: 220px;">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="overtimeSearchInput" class="form-input" placeholder="Personel veya TC...">
+            </div>
+            <div class="select-group">
+              <label for="overtimeStatusFilter">Risk Durumu:</label>
+              <select id="overtimeStatusFilter" class="form-select">
+                <option value="all">Tümü</option>
+                <option value="EXCEEDED">🚨 Kota Aşıldı (>270s)</option>
+                <option value="CRITICAL">⚠️ Kritik (220-270s)</option>
+                <option value="WARNING">🟡 Uyarı (180-220s)</option>
+                <option value="SAFE">🟢 Güvenli (&lt;180s)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Stat Cards for Overtime Register -->
+        <div class="kpi-grid kpi-grid-4" style="margin-top: 14px;">
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-rose">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Yıllık Kotayı Aşan</span>
+              <span class="kpi-value" id="valOtCountExceeded">0 <small>kişi</small></span>
+              <span class="kpi-sub">>270 Saat Kesin Ceza Riski</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-amber">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Kritik Eşik Seviyesi</span>
+              <span class="kpi-value" id="valOtCountCritical">0 <small>kişi</small></span>
+              <span class="kpi-sub">220 - 270 Saat Aralığı</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-cyan">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Yaklaşan / Uyarı</span>
+              <span class="kpi-value" id="valOtCountWarning">0 <small>kişi</small></span>
+              <span class="kpi-sub">180 - 220 Saat Aralığı</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon-wrapper kpi-green">
+              <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="kpi-info">
+              <span class="kpi-label">Yasal Güvenli Bölge</span>
+              <span class="kpi-value" id="valOtCountSafe">250 <small>kişi</small></span>
+              <span class="kpi-sub">&lt;180 Saat Risk Yok</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overtime Table -->
+        <div class="table-responsive-wrapper" style="margin-top: 14px;">
+          <table class="data-table" id="overtimeRegisterTable">
+            <thead>
+              <tr>
+                <th style="width: 45px;">Sıra</th>
+                <th style="width: 105px;">TC Kimlik No</th>
+                <th style="width: 175px;">Adı Soyadı</th>
+                <th style="width: 125px;">Bölüm</th>
+                <th style="width: 42px; text-align: center;">Oca</th>
+                <th style="width: 42px; text-align: center;">Şub</th>
+                <th style="width: 42px; text-align: center;">Mar</th>
+                <th style="width: 42px; text-align: center;">Nis</th>
+                <th style="width: 42px; text-align: center;">May</th>
+                <th style="width: 42px; text-align: center;">Haz</th>
+                <th style="width: 42px; text-align: center;">Tem</th>
+                <th style="width: 42px; text-align: center;">Ağu</th>
+                <th style="width: 46px; text-align: center; background: rgba(56, 189, 248, 0.08);">Eyl</th>
+                <th style="width: 42px; text-align: center;">Eki</th>
+                <th style="width: 42px; text-align: center;">Kas</th>
+                <th style="width: 42px; text-align: center;">Ara</th>
+                <th style="width: 80px; text-align: right; font-weight: 700;">Toplam FM</th>
+                <th style="width: 75px; text-align: right;">Kalan Kota</th>
+                <th style="width: 120px;">Yıllık Doluluk</th>
+                <th style="width: 95px; text-align: center;">Yasal Durum</th>
+              </tr>
+            </thead>
+            <tbody id="overtimeRegisterTableBody">
+              <!-- Injected dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Toolbar -->
+        <div class="pagination-bar">
+          <div class="pagination-info" id="overtimePaginationInfo">
+            Gösterilen: 0 / 0 Personel
+          </div>
+          <div class="pagination-buttons">
+            <button class="btn btn-sm btn-outline" id="btnOvertimePrev">Önceki</button>
+            <span class="page-display" id="overtimePageDisplay">Sayfa 1 / 1</span>
+            <button class="btn btn-sm btn-outline" id="btnOvertimeNext">Sonraki</button>
+          </div>
         </div>
       </div>
 
@@ -1612,6 +1818,111 @@
             <input type="password" id="loginPassword" class="form-input" placeholder="Demo: 123" required>
           </div>
           <button type="submit" class="btn btn-primary" style="height: 38px; white-space: nowrap;">Giriş Yap</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: DÖNEM SEÇİCİ & ÇOKLU AY ARŞİVİ (SQLITE PERSISTENCE)                 -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalPeriodSwitcher">
+    <div class="modal-dialog" style="max-width: 620px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">🗄️</span>
+          <div>
+            <h3 class="modal-title" style="margin-bottom: 2px;">Dönem Seçici & Çoklu Ay Arşivi (SQLite)</h3>
+            <div style="font-size: 11.5px; color: var(--text-muted);">Geçmiş ayların kilitli puantajlarını inceleyin veya yeni döneme devredin</div>
+          </div>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalPeriodSwitcher')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <div style="background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 22px;">ℹ️</span>
+          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">
+            Sistem verileri <strong>SQLite kalıcı veritabanında</strong> (<code>puantaj_archive.db</code>) saklamaktadır. Aktif dönem kilitlenip sonraki aya devredildiğinde, icra kesintileri borçlardan otomatik düşülür ve kalan bakiyeler yeni aya devredilir.
+          </div>
+        </div>
+
+        <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Kayıtlı Dönemler</h4>
+        <div class="period-list-container" id="periodListContainer">
+          <!-- Injected dynamically -->
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">Dönem Kapat & Sonraki Aya Devret</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Mevcut dönemi arşivler, icraları düşer ve yeni ayı açar.</div>
+          </div>
+          <button class="btn btn-warning" id="btnRolloverPeriod" onclick="handlePeriodRollover()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Dönemi Kapat ve Devret</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: YENİ İCRA / MAAŞ HACZİ DOSYASI EKLE                                 -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalNewIcra">
+    <div class="modal-dialog" style="max-width: 500px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">⚖️</span>
+          <div>
+            <h3 class="modal-title" style="margin-bottom: 2px;">Yeni İcra / Maaş Haczi Dosyası Ekle</h3>
+            <div style="font-size: 11.5px; color: var(--text-muted);">İcra dairesi müzekkeresini sisteme işleyin</div>
+          </div>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalNewIcra')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <form id="formNewIcra" onsubmit="handleNewIcraSubmit(event)">
+          <div class="form-group">
+            <label for="icraPersonnelSelect">Personel Seçimi *</label>
+            <select id="icraPersonnelSelect" class="form-select" required>
+              <option value="">Personel seçiniz...</option>
+              <!-- Populated by JS -->
+            </select>
+          </div>
+
+          <div class="form-row" style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="icraDosyaNo">İcra Dosya No *</label>
+              <input type="text" id="icraDosyaNo" class="form-input" placeholder="Örn: 2026/1458 E." required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="icraDaire">İcra Dairesi *</label>
+              <input type="text" id="icraDaire" class="form-input" placeholder="Örn: Bergama İcra D." required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="icraAlacakli">Alacaklı / Kurum</label>
+            <input type="text" id="icraAlacakli" class="form-input" placeholder="Örn: Garanti BBVA / Varlık Yön.">
+          </div>
+
+          <div class="form-row" style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="icraTotalDebt">Toplam Haciz Borcu (TL) *</label>
+              <input type="number" step="0.01" min="1" id="icraTotalDebt" class="form-input" placeholder="Örn: 45000" required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="icraMonthlyDeduction">Aylık Kesinti Tutarı (TL) *</label>
+              <input type="number" step="0.01" min="1" id="icraMonthlyDeduction" class="form-input" placeholder="Örn: 3500" required>
+            </div>
+          </div>
+
+          <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn btn-outline" onclick="closeModal('modalNewIcra')">İptal</button>
+            <button type="submit" class="btn btn-primary">Kaydet ve Devreye Al</button>
+          </div>
         </form>
       </div>
     </div>
