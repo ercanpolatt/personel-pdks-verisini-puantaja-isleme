@@ -20,7 +20,7 @@ const AppState = {
     title: 'Sistem Yöneticisi (Admin)',
     role: 'admin',
     avatar: '🛡️',
-    allowed_tabs: ['tab-overview', 'tab-matrix', 'tab-exceptions', 'tab-bonuses', 'tab-finance', 'tab-compliance', 'tab-reports'],
+    allowed_tabs: ['tab-overview', 'tab-matrix', 'tab-exceptions', 'tab-bonuses', 'tab-finance', 'tab-compliance', 'tab-reports', 'tab-audit'],
     can_resolve_exceptions: true,
     can_view_finance: true,
     can_view_compliance: true,
@@ -104,6 +104,19 @@ const AppState = {
       items: [],
       kpis: {}
     }
+  },
+
+  // Denetim İzi Masası Durumu (Audit Trail)
+  audit: {
+    page: 1,
+    pageSize: 50,
+    search: '',
+    actionType: 'ALL',
+    username: 'ALL',
+    totalPages: 1,
+    totalCount: 0,
+    items: [],
+    summary: {}
   }
 };
 
@@ -222,6 +235,7 @@ function switchTab(tabId) {
     loadCumulativeOvertime();
   }
   if (tabId === 'tab-reports') loadRules();
+  if (tabId === 'tab-audit') loadAuditLogs();
 }
 
 // ----------------------------------------------------------------------------
@@ -2181,6 +2195,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 11. Denetim İzi & Audit Masası Dinleyicileri
+  const auditSearch = document.getElementById('auditSearchInput');
+  if (auditSearch) {
+    auditSearch.addEventListener('input', debounce((e) => {
+      AppState.audit.search = e.target.value.trim();
+      AppState.audit.page = 1;
+      loadAuditLogs();
+    }, 300));
+  }
+
+  const auditActionFilter = document.getElementById('auditActionFilter');
+  if (auditActionFilter) {
+    auditActionFilter.addEventListener('change', (e) => {
+      AppState.audit.actionType = e.target.value;
+      AppState.audit.page = 1;
+      loadAuditLogs();
+    });
+  }
+
+  const auditUserFilter = document.getElementById('auditUserFilter');
+  if (auditUserFilter) {
+    auditUserFilter.addEventListener('change', (e) => {
+      AppState.audit.username = e.target.value;
+      AppState.audit.page = 1;
+      loadAuditLogs();
+    });
+  }
+
+  const btnAuditRefresh = document.getElementById('btnAuditRefresh');
+  if (btnAuditRefresh) {
+    btnAuditRefresh.addEventListener('click', () => {
+      AppState.audit.page = 1;
+      loadAuditLogs();
+    });
+  }
+
+  const btnAuditPrev = document.getElementById('btnAuditPrevPage');
+  if (btnAuditPrev) {
+    btnAuditPrev.addEventListener('click', () => {
+      if (AppState.audit.page > 1) {
+        AppState.audit.page--;
+        loadAuditLogs();
+      }
+    });
+  }
+
+  const btnAuditNext = document.getElementById('btnAuditNextPage');
+  if (btnAuditNext) {
+    btnAuditNext.addEventListener('click', () => {
+      if (AppState.audit.page < AppState.audit.totalPages) {
+        AppState.audit.page++;
+        loadAuditLogs();
+      }
+    });
+  }
+
   // Başlangıç Yüklemesi: Önce kullanıcı yetkilerini çek, sonra verileri yükle
   initCurrentUser().then(() => {
     loadStats();
@@ -2340,6 +2410,9 @@ async function switchRole(username, password = null) {
     if (AppState.activeTab === 'tab-compliance') {
       loadComplianceRadar();
       loadCumulativeOvertime();
+    }
+    if (AppState.activeTab === 'tab-audit') {
+      loadAuditLogs();
     }
   } catch (err) {
     showToast('Hata: ' + err.message, 'error');
@@ -2771,6 +2844,160 @@ async function handleNewIcraSubmit(e) {
   } catch (err) {
     showToast('Hata: ' + err.message, 'error');
   }
+}
+
+// ============================================================================
+// 11. DEĞİŞİKLİK VE GÜVENLİK DENETİM İZİ MASASI (AUDIT TRAIL)
+// ============================================================================
+async function loadAuditLogs() {
+  const tableBody = document.getElementById('auditTableBody');
+  if (!tableBody) return;
+
+  const params = new URLSearchParams({
+    page: AppState.audit.page,
+    page_size: AppState.audit.pageSize
+  });
+
+  if (AppState.audit.search) {
+    params.append('search', AppState.audit.search);
+  }
+  if (AppState.audit.actionType && AppState.audit.actionType !== 'ALL') {
+    params.append('action_type', AppState.audit.actionType);
+  }
+  if (AppState.audit.username && AppState.audit.username !== 'ALL') {
+    params.append('username', AppState.audit.username);
+  }
+
+  try {
+    const res = await fetch(`/api/audit/logs?${params.toString()}`);
+    if (!res.ok) throw new Error('Denetim kayıtları alınamadı');
+    const data = await res.json();
+
+    AppState.audit.items = data.items || [];
+    AppState.audit.totalCount = data.total || 0;
+    AppState.audit.totalPages = data.total_pages || 1;
+    AppState.audit.summary = data.summary || {};
+
+    renderAuditKPIs(data.summary);
+    renderAuditTable(data.items);
+    renderAuditPagination(data);
+
+    // Rozet güncelle
+    const badgeAudit = document.getElementById('badgeAuditCount');
+    if (badgeAudit) {
+      badgeAudit.innerText = `${data.total || 0}`;
+    }
+  } catch (err) {
+    console.error('Audit logs fetch error:', err);
+    tableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--color-danger); padding: 2rem;">Hata: ${err.message}</td></tr>`;
+  }
+}
+
+function renderAuditKPIs(summary = {}) {
+  const valTotal = document.getElementById('valAuditTotal');
+  const valHours = document.getElementById('valAuditHours');
+  const valToday = document.getElementById('valAuditToday');
+  const valUser = document.getElementById('valAuditUser');
+
+  if (valTotal) valTotal.innerText = fmtInt(summary.total_logs || 0);
+  if (valHours) valHours.innerText = fmtInt(summary.hours_revisions || 0);
+  if (valToday) valToday.innerText = fmtInt(summary.today_logs || 0);
+  if (valUser) valUser.innerText = summary.most_active_user || 'Kayıt Yok';
+}
+
+function renderAuditTable(items = []) {
+  const tableBody = document.getElementById('auditTableBody');
+  if (!tableBody) return;
+
+  if (items.length === 0) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+          Kriterlere uygun idari değişiklik veya denetim izi kaydı bulunamadı.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const actionBadgeMap = {
+    'EXCEPTION_RESOLVE': { label: 'Eksik Basım', cls: 'badge-action-exception', icon: '⏱️' },
+    'BULK_RESOLVE': { label: 'Toplu Onay', cls: 'badge-action-bulk', icon: '⚡' },
+    'RULE_UPDATE': { label: 'Kural Değişimi', cls: 'badge-action-rule', icon: '⚙️' },
+    'PERIOD_ROLLOVER': { label: 'Dönem Devir', cls: 'badge-action-rollover', icon: '📅' },
+    'ICRA_ADD': { label: 'İcra / Haciz', cls: 'badge-action-icra', icon: '⚖️' },
+    'FILE_UPLOAD': { label: 'Excel Yükleme', cls: 'badge-action-upload', icon: '📤' }
+  };
+
+  let html = '';
+  items.forEach(it => {
+    const badgeInfo = actionBadgeMap[it.action_type] || { label: it.action_type, cls: 'badge-action-exception', icon: '📝' };
+    const dayStr = it.day ? `Gün ${it.day}` : '-';
+
+    html += `
+      <tr>
+        <td style="white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">
+          ${it.timestamp || '-'}
+        </td>
+        <td>
+          <div class="audit-user-cell">
+            <span class="audit-user-name">${it.user_name || it.username}</span>
+            <span class="audit-user-sub">${it.username} (${(it.user_role || '').toUpperCase()})</span>
+          </div>
+        </td>
+        <td>
+          <span class="audit-action-badge ${badgeInfo.cls}">
+            <span>${badgeInfo.icon}</span>
+            <span>${badgeInfo.label}</span>
+          </span>
+        </td>
+        <td>
+          <div style="font-weight: 600; color: var(--text-main);">${it.target_name || '-'}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">
+            ${it.target_tc ? `TC: ${it.target_tc}` : ''} ${it.target_dept ? `| Bölüm: ${it.target_dept}` : ''}
+          </div>
+        </td>
+        <td style="text-align: center; font-weight: 600; font-size: 11px;">
+          ${dayStr}
+        </td>
+        <td>
+          <span class="audit-val-old">${it.old_value || '-'}</span>
+        </td>
+        <td>
+          <span class="audit-val-new">${it.new_value || '-'}</span>
+        </td>
+        <td style="font-size: 12px; color: var(--text-main); max-width: 280px;">
+          ${it.reason || '-'}
+        </td>
+        <td>
+          <span class="audit-ip-tag">${it.ip_address || '-'}</span>
+        </td>
+      </tr>
+    `;
+  });
+
+  tableBody.innerHTML = html;
+}
+
+function renderAuditPagination(data) {
+  const info = document.getElementById('auditPaginationInfo');
+  const current = document.getElementById('auditCurrentPage');
+  const btnPrev = document.getElementById('btnAuditPrevPage');
+  const btnNext = document.getElementById('btnAuditNextPage');
+
+  const total = data.total || 0;
+  const page = data.page || 1;
+  const pageSize = data.page_size || 50;
+  const totalPages = data.total_pages || 1;
+
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+
+  if (info) info.innerText = `Gösterilen: ${start} - ${end} / ${total} Kayıt`;
+  if (current) current.innerText = `Sayfa ${page} / ${totalPages}`;
+
+  if (btnPrev) btnPrev.disabled = (page <= 1);
+  if (btnNext) btnNext.disabled = (page >= totalPages);
 }
 
 

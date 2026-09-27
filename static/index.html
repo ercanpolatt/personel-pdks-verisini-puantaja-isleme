@@ -140,6 +140,16 @@
         </svg>
         <span>Rapor Merkezi & Ayarlar</span>
       </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-audit" id="navTabAudit">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>Denetim İzi (Audit)</span>
+        <span class="tab-pill pill-blue" id="badgeAuditCount">Canlı</span>
+      </button>
     </div>
   </nav>
 
@@ -1642,6 +1652,170 @@
           </div>
         </div>
 
+      </div>
+
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB 8: DENETİM İZİ & İDARİ DEĞİŞİKLİK MASASI (AUDIT TRAIL)                -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-audit">
+      
+      <!-- Top Action Bar & Title -->
+      <div class="table-card-header" style="margin-bottom: 1.5rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.25rem 0;">
+            <span>🛡️ Değişiklik ve Güvenlik Denetim İzi (Audit Trail)</span>
+          </h2>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+            4857 Sayılı İş Kanunu ve SGK İş Teftişi Standartlarında Zaman Damgalı İdari Hareket Kütüğü
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <a href="/api/audit/print/html" target="_blank" class="btn btn-outline" id="btnAuditPrint" title="Yazdırılabilir A4 Denetim Tutanağı Aç">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            <span>Resmi Tutanak Yazdır (A4)</span>
+          </a>
+          <a href="/api/audit/export/excel" class="btn btn-primary" id="btnAuditExcel" download title="Tüm Denetim İzini Excel Olarak İndir">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Denetim Excel İndir (.xlsx)</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- 4 Executive Audit KPIs -->
+      <div class="kpi-grid" style="margin-bottom: 1.5rem;">
+        <div class="kpi-card" id="kpiAuditTotal">
+          <div class="kpi-icon-wrapper kpi-blue">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Toplam İdari Değişiklik</span>
+            <span class="kpi-value" id="valAuditTotal">0</span>
+            <span class="kpi-sub">Zaman Damgalı Kütük</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiAuditHours">
+          <div class="kpi-icon-wrapper kpi-orange">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Saat & Mesai Revizyonu</span>
+            <span class="kpi-value" id="valAuditHours">0</span>
+            <span class="kpi-sub">Tekil / Toplu Onaylar</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiAuditToday">
+          <div class="kpi-icon-wrapper kpi-green">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">Bugünkü Hareketler</span>
+            <span class="kpi-value" id="valAuditToday">0</span>
+            <span class="kpi-sub">Güncel Güvenlik Olayı</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpiAuditUser">
+          <div class="kpi-icon-wrapper kpi-purple">
+            <svg class="kpi-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="kpi-info">
+            <span class="kpi-label">En Aktif Yetkili</span>
+            <span class="kpi-value" id="valAuditUser" style="font-size: 1.1rem; line-height: 1.6rem;">-</span>
+            <span class="kpi-sub">Müdahale Yoğunluğu</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit Filter Toolbar -->
+      <div class="table-card" style="margin-bottom: 1.5rem;">
+        <div class="table-toolbar" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: 1rem 1.25rem;">
+          <div class="search-box" style="flex: 2; min-width: 250px;">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="auditSearchInput" class="search-input" placeholder="Personel Adı, TC Kimlik, Kullanıcı veya Gerekçe Ara...">
+          </div>
+
+          <div style="flex: 1; min-width: 180px;">
+            <select id="auditActionFilter" class="form-input" style="padding: 0.5rem 0.75rem; height: 38px;">
+              <option value="ALL">Tüm İşlem Türleri</option>
+              <option value="EXCEPTION_RESOLVE">Eksik Basım Onayı (Tekil)</option>
+              <option value="BULK_RESOLVE">Toplu Amir Onayı</option>
+              <option value="RULE_UPDATE">Kural / Vardiya Parametresi</option>
+              <option value="PERIOD_ROLLOVER">Dönem Kapanış / Devir</option>
+              <option value="ICRA_ADD">İcra / Haciz Kaydı</option>
+              <option value="FILE_UPLOAD">Excel Veri Yükleme</option>
+            </select>
+          </div>
+
+          <div style="flex: 1; min-width: 160px;">
+            <select id="auditUserFilter" class="form-input" style="padding: 0.5rem 0.75rem; height: 38px;">
+              <option value="ALL">Tüm Yetkililer</option>
+              <option value="ik_yonetici">Ayşe Yılmaz (İK)</option>
+              <option value="muhasebe">Burak Kaya (Muhasebe)</option>
+              <option value="admin">Sistem Yöneticisi (Admin)</option>
+              <option value="genel_mudur">Hakan Demir (Genel Müdür)</option>
+            </select>
+          </div>
+
+          <button class="btn btn-outline" id="btnAuditRefresh" title="Listeyi Yenile">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Filtrele</span>
+          </button>
+        </div>
+
+        <!-- Audit Logs Table -->
+        <div class="table-responsive">
+          <table class="data-table" id="auditTable">
+            <thead>
+              <tr>
+                <th style="width: 130px;">Zaman Damgası</th>
+                <th style="width: 170px;">Yetkili Kullanıcı</th>
+                <th style="width: 160px;">İşlem Türü</th>
+                <th>İlgili Personel / Kapsam</th>
+                <th style="width: 60px; text-align: center;">Gün</th>
+                <th style="width: 100px;">Eski Değer</th>
+                <th style="width: 110px;">Yeni Değer</th>
+                <th>İdari Dayanak / Gerekçe</th>
+                <th style="width: 100px;">İstemci IP</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody">
+              <tr>
+                <td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                  Denetim kayıtları yükleniyor...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Footer -->
+        <div class="table-pagination" id="auditPagination" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1.25rem; border-top: 1px solid var(--border-color);">
+          <div class="pagination-info" id="auditPaginationInfo" style="font-size: 0.85rem; color: var(--text-muted);">
+            Gösterilen: 0 / 0 Kayıt
+          </div>
+          <div class="pagination-controls" style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-sm btn-outline" id="btnAuditPrevPage" disabled>« Önceki</button>
+            <span class="pagination-current" id="auditCurrentPage" style="display: flex; align-items: center; padding: 0 0.5rem; font-size: 0.85rem; font-weight: 600;">Sayfa 1 / 1</span>
+            <button class="btn btn-sm btn-outline" id="btnAuditNextPage" disabled>Sonraki »</button>
+          </div>
+        </div>
       </div>
 
     </section>

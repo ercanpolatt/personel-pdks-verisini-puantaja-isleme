@@ -2537,4 +2537,93 @@ body {
   font-weight: 700;
 }
 
+/* ========================================================================== */
+/* AUDIT TRAIL & İDARİ DENETİM İZİ STYLES                                     */
+/* ========================================================================== */
+
+.audit-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.badge-action-exception {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+
+.badge-action-bulk {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.badge-action-rule {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-action-rollover {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-action-icra {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.badge-action-upload {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+
+.audit-user-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audit-user-name {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.audit-user-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.audit-val-old {
+  color: #f87171;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.audit-val-new {
+  color: #34d399;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.audit-ip-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 

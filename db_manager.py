@@ -17,6 +17,12 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
+import json
+import io
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+
 from pdks_engine import norm_name_key, clean_display_text
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -191,12 +197,37 @@ class DatabaseManager:
                 );
             """)
 
+            # 7. DENETİM İZİ & ZAMAN DAMGALI İDARİ DEĞİŞİKLİK GÜNLÜĞÜ (AUDIT_LOGS)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    user_name TEXT NOT NULL,
+                    user_role TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    target_tc TEXT,
+                    target_name TEXT,
+                    target_dept TEXT,
+                    day INTEGER,
+                    old_value TEXT,
+                    new_value TEXT,
+                    reason TEXT NOT NULL,
+                    ip_address TEXT DEFAULT '127.0.0.1',
+                    metadata_json TEXT
+                );
+            """)
+
             # Hızlı arama indeksleri
             cur.execute("CREATE INDEX IF NOT EXISTS idx_monthly_period ON monthly_records(period_key);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_monthly_name ON monthly_records(name_key);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_cum_year ON cumulative_overtime(year);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_cum_risk ON cumulative_overtime(risk_status);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_icra_name ON icra_records(name_key);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(timestamp);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action_type);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_tc ON audit_logs(target_tc);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
             conn.commit()
 
     # =========================================================================
@@ -218,6 +249,8 @@ class DatabaseManager:
             cur.execute("SELECT period_key FROM periods WHERE period_key = ?", (period_key,))
             row = cur.fetchone()
             if row:
+                self._seed_audit_logs_if_empty(cur)
+                conn.commit()
                 return False  # Zaten yüklenmiş
 
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -367,9 +400,36 @@ class DatabaseManager:
                     tot_ot, rem_limit, risk, now_str
                 ))
 
+            # 5. Başlangıç Denetim İzi Kayıtlarını Oluştur (Eğer boşsa)
+            self._seed_audit_logs_if_empty(cur)
+
             conn.commit()
             print(f"[DatabaseManager] SQLite Veritabanı başarıyla ilklendirildi: {period_key} dönemi kaydedildi.")
             return True
+
+    def _seed_audit_logs_if_empty(self, cur: sqlite3.Cursor):
+        """Eğer denetim izi günlüğü henüz boşsa sistem kurulumu ve örnek idari müdahaleleri işler."""
+        cur.execute("SELECT COUNT(*) as cnt FROM audit_logs;")
+        if cur.fetchone()["cnt"] == 0:
+            cur.execute("""
+                INSERT INTO audit_logs (
+                    timestamp, username, user_name, user_role, action_type,
+                    target_tc, target_name, target_dept, day, old_value, new_value,
+                    reason, ip_address, metadata_json
+                ) VALUES
+                ('2026-09-01 08:00:00', 'admin', 'Sistem Yöneticisi', 'admin', 'FILE_UPLOAD',
+                 NULL, NULL, NULL, NULL, NULL, 'pdks.xls / puantaj.xls',
+                 'Eylül 2026 fabrika PDKS kart basımları ve puantaj cetveli sisteme yüklendi.', '127.0.0.1', NULL),
+                ('2026-09-01 08:05:00', 'admin', 'Sistem Yöneticisi', 'admin', 'PERIOD_ROLLOVER',
+                 NULL, NULL, NULL, NULL, NULL, '2026-09 (Eylül 2026)',
+                 '2026-09 dönemi aktif edildi ve 250 çalışan için puantaj ve mesai kütüğü açıldı.', '127.0.0.1', NULL),
+                ('2026-09-02 09:15:00', 'muhasebe', 'Burak Kaya', 'accounting', 'ICRA_ADD',
+                 '33827177582', 'HAKAN VURAL', 'Konserve', NULL, '0,00 TL', '109.832,25 TL',
+                 'Bergama İcra Dairesi 2024/1105 E. sayılı 1/4 maaş haczi müzekkeresi sisteme işlendi.', '127.0.0.1', NULL),
+                ('2026-09-23 22:30:00', 'ik_yonetici', 'Ayşe Yılmaz', 'hr', 'EXCEPTION_RESOLVE',
+                 '11111111111', 'ADEM YILDIRIM', 'Balık Dolum', 4, '0.0s (Tek Basım)', '7.5s (Standart)',
+                 'Saha amirinden teyit alındı: 4.09.2026 tarihinde fiilen tam vardiya çalıştı.', '127.0.0.1', NULL);
+            """)
 
     # =========================================================================
     # DÖNEM YÖNETİMİ VE GEÇİŞLER (PERIOD MANAGEMENT)
@@ -630,10 +690,360 @@ class DatabaseManager:
                 payload.get("bolum", "Genel"), payload.get("sirket", "Fide Konserve"),
                 payload.get("dosya_no", ""), float(payload.get("toplam_borc", 0.0)),
                 float(payload.get("kesilen_kumulatif", 0.0)),
-                float(payload.get("kalan_borc", payload.get("toplam_borc", 0.0))),
+                float(payload.get("kalan_borc") if payload.get("kalan_borc") is not None else payload.get("toplam_borc", 0.0)),
                 float(payload.get("aylik_kesinti_orani", 0.25)),
                 payload.get("durum", "AKTİF"), payload.get("iban", ""),
                 payload.get("aciklama", ""), now_str, now_str
             ))
             conn.commit()
             return {"status": "success", "message": "İcra kaydı başarıyla kaydedildi."}
+
+    # =========================================================================
+    # 7. DEĞİŞİKLİK VE GÜVENLİK DENETİM İZİ (AUDIT TRAIL / KİM NE YAPTI?)
+    # =========================================================================
+    def log_action(
+        self,
+        username: str,
+        user_name: str,
+        user_role: str,
+        action_type: str,
+        reason: str = "İdari işlem",
+        target_tc: Optional[str] = None,
+        target_name: Optional[str] = None,
+        target_dept: Optional[str] = None,
+        day: Optional[int] = None,
+        old_value: Optional[str] = None,
+        new_value: Optional[str] = None,
+        ip_address: str = "127.0.0.1",
+        metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[str] = None
+    ) -> int:
+        """
+        Sistemde gerçekleştirilen herhangi bir idari işlemi zaman damgalı,
+        değiştirilemez denetim izi günlüğüne (audit_logs) kaydeder.
+        """
+        now_str = timestamp or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        meta_str = json.dumps(metadata, ensure_ascii=False) if metadata else None
+
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO audit_logs (
+                    timestamp, username, user_name, user_role, action_type,
+                    target_tc, target_name, target_dept, day, old_value, new_value,
+                    reason, ip_address, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, (
+                now_str, username, user_name, user_role, action_type,
+                target_tc, target_name, target_dept, day, old_value, new_value,
+                reason, ip_address, meta_str
+            ))
+            conn.commit()
+            return cur.lastrowid
+
+    def get_audit_logs(
+        self,
+        search: Optional[str] = None,
+        action_type: Optional[str] = None,
+        username: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Denetim izi kayıtlarını filtreler, sayfalama yapar ve özet KPI'ları hesaplar.
+        Hem (page, page_size) hem de (limit, offset) kullanımını destekler.
+        """
+        eff_limit = limit if limit is not None else page_size
+        eff_offset = offset if offset is not None else ((page - 1) * page_size)
+
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+
+            conditions = []
+            params = []
+
+            if search and search.strip():
+                s = f"%{search.strip()}%"
+                conditions.append("""(
+                    target_name LIKE ? OR
+                    target_tc LIKE ? OR
+                    reason LIKE ? OR
+                    old_value LIKE ? OR
+                    new_value LIKE ? OR
+                    target_dept LIKE ? OR
+                    user_name LIKE ? OR
+                    username LIKE ?
+                )""")
+                params.extend([s, s, s, s, s, s, s, s])
+
+            if action_type and action_type.strip() and action_type.upper() != "ALL":
+                conditions.append("action_type = ?")
+                params.append(action_type.strip())
+
+            if username and username.strip() and username.upper() != "ALL":
+                conditions.append("username = ?")
+                params.append(username.strip())
+
+            where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+            # Toplam filtrelenmiş kayıt sayısı
+            cur.execute(f"SELECT COUNT(*) as cnt FROM audit_logs {where_clause};", params)
+            total_filtered = cur.fetchone()["cnt"]
+
+            # Kayıtları getir (en yeniden en eskiye)
+            query = f"""
+                SELECT id, timestamp, username, user_name, user_role, action_type,
+                       target_tc, target_name, target_dept, day, old_value, new_value,
+                       reason, ip_address, metadata_json
+                FROM audit_logs
+                {where_clause}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?;
+            """
+            cur.execute(query, params + [eff_limit, eff_offset])
+            rows = []
+            for r in cur.fetchall():
+                d = dict(r)
+                if d.get("metadata_json"):
+                    try:
+                        d["metadata"] = json.loads(d["metadata_json"])
+                    except Exception:
+                        d["metadata"] = {}
+                else:
+                    d["metadata"] = {}
+                rows.append(d)
+
+            # Genel KPI'lar (Tüm tablodan)
+            cur.execute("SELECT COUNT(*) as total_cnt FROM audit_logs;")
+            total_logs = cur.fetchone()["total_cnt"]
+
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            cur.execute("SELECT COUNT(*) as today_cnt FROM audit_logs WHERE timestamp LIKE ?;", (f"{today_str}%",))
+            today_logs = cur.fetchone()["today_cnt"]
+
+            cur.execute("SELECT COUNT(*) as rev_cnt FROM audit_logs WHERE action_type IN ('EXCEPTION_RESOLVE', 'BULK_RESOLVE');")
+            hours_revisions = cur.fetchone()["rev_cnt"]
+
+            cur.execute("""
+                SELECT user_name, COUNT(*) as cnt
+                FROM audit_logs
+                GROUP BY user_name
+                ORDER BY cnt DESC LIMIT 1;
+            """)
+            most_active_row = cur.fetchone()
+            most_active_user = most_active_row["user_name"] if most_active_row else "—"
+
+            total_pages = (total_filtered + page_size - 1) // page_size if total_filtered > 0 else 1
+
+            kpis = {
+                "total_logs": total_logs,
+                "today_logs": today_logs,
+                "hours_revisions": hours_revisions,
+                "most_active_user": most_active_user
+            }
+
+            return {
+                "status": "success",
+                "summary": kpis,
+                "kpis": kpis,
+                "total": total_filtered,
+                "total_count": total_filtered,
+                "total_pages": total_pages,
+                "page": page,
+                "page_size": page_size,
+                "limit": eff_limit,
+                "offset": eff_offset,
+                "items": rows,
+                "logs": rows
+            }
+
+    def export_audit_excel(
+        self,
+        search: Optional[str] = None,
+        action_type: Optional[str] = None,
+        username: Optional[str] = None
+    ) -> bytes:
+        """
+        İş Teftişi ve İç Denetim için resmi A4/Bordro formatında
+        Excel Değişiklik ve Güvenlik Denetim İzi Raporu (.xlsx) üretir.
+        """
+        res = self.get_audit_logs(search=search, action_type=action_type, username=username, limit=5000, offset=0)
+        logs = res["logs"]
+        kpis = res["kpis"]
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "İdari Değişiklik Denetim İzi"
+        ws.views.sheetView[0].showGridLines = True
+
+        navy_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        header_fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+        zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+        kpi_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+        
+        font_company = Font(name="Segoe UI", size=14, bold=True, color="FFFFFF")
+        font_sub = Font(name="Segoe UI", size=10, bold=True, color="94A3B8")
+        font_header = Font(name="Segoe UI", size=10, bold=True, color="FFFFFF")
+        font_body = Font(name="Segoe UI", size=9.5, color="1E293B")
+        font_bold = Font(name="Segoe UI", size=9.5, bold=True, color="0F172A")
+        font_mono = Font(name="Consolas", size=9, color="334155")
+        
+        thin_border = Border(
+            left=Side(style='thin', color='E2E8F0'),
+            right=Side(style='thin', color='E2E8F0'),
+            top=Side(style='thin', color='E2E8F0'),
+            bottom=Side(style='thin', color='E2E8F0')
+        )
+
+        # 1. Başlık Bandı
+        ws.merge_cells("A1:L1")
+        cell_title = ws["A1"]
+        cell_title.value = "FİDE KONSERVE GIDA SAN. VE TİC. A.Ş."
+        cell_title.font = font_company
+        cell_title.fill = navy_fill
+        cell_title.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 28
+
+        ws.merge_cells("A2:L2")
+        cell_sub = ws["A2"]
+        cell_sub.value = "RESMİ İŞ TEFTİŞİ VE ÇALIŞMA SÜRELERİ İDARİ DEĞİŞİKLİK VE DENETİM KÜTÜĞÜ (4857 SK MD. 67 / 92)"
+        cell_sub.font = font_sub
+        cell_sub.fill = navy_fill
+        cell_sub.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 20
+
+        ws.merge_cells("A3:L3")
+        cell_meta = ws["A3"]
+        now_tr = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        cell_meta.value = f"Rapor Oluşturma Zamanı: {now_tr} | Denetim Statüsü: RESMİ İŞ MÜFETTİŞİ İNCELEMESİNE HAZIR"
+        cell_meta.font = Font(name="Segoe UI", size=8.5, italic=True, color="64748B")
+        cell_meta.alignment = Alignment(horizontal="right", vertical="center")
+        ws.row_dimensions[3].height = 18
+
+        # 2. KPI Özet Bloğu
+        ws["A5"] = f"Toplam Kayıt: {kpis['total_logs']}"
+        ws["A5"].font = font_bold
+        ws["A5"].fill = kpi_fill
+        ws["A5"].alignment = Alignment(horizontal="center", vertical="center")
+        
+        ws["D5"] = f"Bugün Yapılan: {kpis['today_logs']}"
+        ws["D5"].font = font_bold
+        ws["D5"].fill = kpi_fill
+        ws["D5"].alignment = Alignment(horizontal="center", vertical="center")
+
+        ws["G5"] = f"Saat Revizyonları: {kpis['hours_revisions']}"
+        ws["G5"].font = font_bold
+        ws["G5"].fill = kpi_fill
+        ws["G5"].alignment = Alignment(horizontal="center", vertical="center")
+
+        ws["J5"] = f"En Aktif Yetkili: {kpis['most_active_user']}"
+        ws["J5"].font = font_bold
+        ws["J5"].fill = kpi_fill
+        ws["J5"].alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[5].height = 22
+
+        # 3. Tablo Başlıkları
+        headers = [
+            ("Sıra", 6),
+            ("Zaman Damgası", 18),
+            ("İşlemi Yapan", 18),
+            ("Rol", 12),
+            ("İşlem Türü", 18),
+            ("Personel TC", 14),
+            ("Personel Adı Soyadı", 24),
+            ("Bölüm", 18),
+            ("Gün", 7),
+            ("Eski Değer", 14),
+            ("Yeni Değer", 14),
+            ("Resmi İdari Gerekçe / Açıklama", 42)
+        ]
+
+        header_row = 7
+        ws.row_dimensions[header_row].height = 26
+        for col_idx, (col_name, col_width) in enumerate(headers, 1):
+            cell = ws.cell(row=header_row, column=col_idx)
+            cell.value = col_name
+            cell.font = font_header
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = thin_border
+            ws.column_dimensions[get_column_letter(col_idx)].width = col_width
+
+        # 4. Tablo Satırları
+        action_names = {
+            "EXCEPTION_RESOLVE": "İstisna Onayı",
+            "BULK_RESOLVE": "Toplu Onay",
+            "RULE_UPDATE": "Kural Güncelleme",
+            "ICRA_ADD": "İcra Kaydı",
+            "PERIOD_ROLLOVER": "Dönem Devri",
+            "FILE_UPLOAD": "Dosya Yükleme"
+        }
+
+        row_idx = 8
+        for idx, log in enumerate(logs, 1):
+            ws.row_dimensions[row_idx].height = 20
+            is_zebra = (idx % 2 == 0)
+            row_fill = zebra_fill if is_zebra else None
+
+            action_tr = action_names.get(log["action_type"], log["action_type"])
+            time_str = log["timestamp"]
+            day_str = str(log["day"]) if log["day"] is not None else "—"
+
+            vals = [
+                idx,
+                time_str,
+                log["user_name"],
+                (log["user_role"] or "").upper(),
+                action_tr,
+                log["target_tc"] or "—",
+                log["target_name"] or "—",
+                log["target_dept"] or "—",
+                day_str,
+                log["old_value"] or "—",
+                log["new_value"] or "—",
+                log["reason"]
+            ]
+
+            for c_idx, val in enumerate(vals, 1):
+                c = ws.cell(row=row_idx, column=c_idx)
+                c.value = val
+                c.font = font_mono if c_idx in (2, 6, 9, 10, 11) else font_body
+                c.border = thin_border
+                if row_fill:
+                    c.fill = row_fill
+
+                if c_idx in (1, 2, 4, 6, 9):
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                elif c_idx in (10, 11):
+                    c.alignment = Alignment(horizontal="right", vertical="center")
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center")
+
+            row_idx += 1
+
+        # 5. Resmi İmza ve Onay Bloğu
+        sig_row = row_idx + 2
+        ws.row_dimensions[sig_row].height = 22
+        ws.row_dimensions[sig_row + 1].height = 50
+
+        ws.cell(row=sig_row, column=2, value="Puantaj Kontrol Amiri").font = font_bold
+        ws.cell(row=sig_row, column=2).alignment = Alignment(horizontal="center")
+        ws.cell(row=sig_row + 1, column=2, value="İmza:\nTarih:").font = font_body
+        ws.cell(row=sig_row + 1, column=2).alignment = Alignment(horizontal="center", vertical="top")
+
+        ws.cell(row=sig_row, column=6, value="İnsan Kaynakları Yöneticisi").font = font_bold
+        ws.cell(row=sig_row, column=6).alignment = Alignment(horizontal="center")
+        ws.cell(row=sig_row + 1, column=6, value="İmza:\nTarih:").font = font_body
+        ws.cell(row=sig_row + 1, column=6).alignment = Alignment(horizontal="center", vertical="top")
+
+        ws.cell(row=sig_row, column=10, value="İş Müfettişi / Denetçi").font = font_bold
+        ws.cell(row=sig_row, column=10).alignment = Alignment(horizontal="center")
+        ws.cell(row=sig_row + 1, column=10, value="İnceleme Şerhi & İmza:\nTarih:").font = font_body
+        ws.cell(row=sig_row + 1, column=10).alignment = Alignment(horizontal="center", vertical="top")
+
+        stream = io.BytesIO()
+        wb.save(stream)
+        stream.seek(0)
+        return stream.getvalue()

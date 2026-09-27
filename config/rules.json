@@ -34,14 +34,22 @@
   "department_bonuses": {
     "BALIK_DOLUM_KESIM": {
       "name": "Balık Dolum ve Kesim Primi",
-      "match_keywords": ["BALIK DOLUM", "BALIK KESIM", "BALIK KES"],
+      "match_keywords": [
+        "BALIK DOLUM",
+        "BALIK KESIM",
+        "BALIK KES"
+      ],
       "min_hours_threshold": 0.0,
       "bonus_hours": 2.0,
       "description": "Balık Dolum ve Kesim Primi: Çalışılan her güne saat fark etmeksizin +2.0 saat eklenir (Örn: 8s -> 10s, 9s -> 11s)"
     },
     "URETIM": {
       "name": "Üretim Primi",
-      "match_keywords": ["URETIM", "URETIM ELEMANI", "KONSERVE URETIM"],
+      "match_keywords": [
+        "URETIM",
+        "URETIM ELEMANI",
+        "KONSERVE URETIM"
+      ],
       "min_hours_threshold": 12.0,
       "bonus_hours": 4.0,
       "description": "Üretim Primi: 12.0 saat ve üzeri çalışmalara +4.0 saat eklenir"

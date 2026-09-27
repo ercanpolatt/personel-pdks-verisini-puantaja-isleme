@@ -615,7 +615,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "İnsan Kaynakları Yöneticisi",
         "role": "hr",
         "avatar": "👩‍💼",
-        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-compliance"],
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-compliance", "tab-audit"],
         "can_resolve_exceptions": True,
         "can_view_finance": False,
         "can_view_compliance": True,
@@ -629,7 +629,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Bordro & Muhasebe Şefi",
         "role": "accounting",
         "avatar": "👨‍💼",
-        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-finance", "tab-bonuses", "tab-reports"],
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-finance", "tab-bonuses", "tab-reports", "tab-audit"],
         "can_resolve_exceptions": False,
         "can_view_finance": True,
         "can_view_compliance": False,
@@ -643,7 +643,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Fabrika Müdürü / Genel Müdür",
         "role": "plant_manager",
         "avatar": "👔",
-        "allowed_tabs": ["tab-overview", "tab-finance", "tab-compliance"],
+        "allowed_tabs": ["tab-overview", "tab-finance", "tab-compliance", "tab-audit"],
         "can_resolve_exceptions": False,
         "can_view_finance": True,
         "can_view_compliance": True,
@@ -657,7 +657,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Sistem Yöneticisi (Admin)",
         "role": "admin",
         "avatar": "🛡️",
-        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-bonuses", "tab-finance", "tab-compliance", "tab-reports"],
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-bonuses", "tab-finance", "tab-compliance", "tab-reports", "tab-audit"],
         "can_resolve_exceptions": True,
         "can_view_finance": True,
         "can_view_compliance": True,
@@ -686,6 +686,15 @@ def get_current_user_from_request(request: Optional[Request] = None) -> Dict[str
 
     # Varsayılan kullanıcı admin (Geriye dönük tam uyumluluk)
     return USERS["admin"]
+
+def get_client_ip(request: Optional[Request] = None) -> str:
+    """İstemcinin IP adresini döner."""
+    if not request:
+        return "127.0.0.1"
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
 
 # -----------------------------------------------------------------------------
 # PYDANTIC MODELLERİ
@@ -815,6 +824,21 @@ def close_and_rollover_period_endpoint(payload: PeriodRolloverRequest = Body(...
     curr_key = payload.current_period_key or f"{mgr.target_year}-{mgr.target_month:02d}"
     try:
         res = db.close_and_rollover_period(curr_key)
+        db.log_action(
+            username=user.get("username", "system"),
+            user_name=user.get("name", "Bilinmeyen"),
+            user_role=user.get("role", "user"),
+            action_type="PERIOD_ROLLOVER",
+            target_tc="",
+            target_name=f"Dönem Kapanış: {curr_key}",
+            target_dept="Tüm Fabrika",
+            day=None,
+            old_value=f"Açık Dönem: {curr_key}",
+            new_value=f"Yeni Dönem: {res.get('new_period_key')}",
+            reason=f"Aylık puantaj kesinleştirme ve icra bakiye devri ({res.get('icra_processed_count', 0)} icra işlendi)",
+            ip_address=get_client_ip(request),
+            metadata=res
+        )
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -848,7 +872,25 @@ def add_update_icra_endpoint(payload: IcraCreateUpdateRequest, request: Request 
     
     db = DatabaseManager()
     data_dict = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-    return db.add_or_update_icra(data_dict)
+    res = db.add_or_update_icra(data_dict)
+    
+    # Audit log
+    db.log_action(
+        username=user.get("username", "muhasebe"),
+        user_name=user.get("name", "Bilinmeyen"),
+        user_role=user.get("role", "accounting"),
+        action_type="ICRA_ADD",
+        target_tc=data_dict.get("tc", ""),
+        target_name=data_dict.get("ad_soyad", ""),
+        target_dept=data_dict.get("bolum", ""),
+        day=None,
+        old_value=f"Kalan: {float(data_dict.get('kalan_borc') if data_dict.get('kalan_borc') is not None else data_dict.get('toplam_borc', 0.0)):.2f} TL",
+        new_value=f"Borç: {float(data_dict.get('toplam_borc', 0.0) or 0.0):.2f} TL / Dosya: {data_dict.get('dosya_no', '')}",
+        reason=f"İcra dosyası ekleme/güncelleme ({data_dict.get('aciklama', 'İcra dairesi tebligatı')})",
+        ip_address=get_client_ip(request),
+        metadata=data_dict
+    )
+    return res
 
 
 # -----------------------------------------------------------------------------
@@ -1278,6 +1320,17 @@ def resolve_exception_endpoint(payload: ExceptionResolveRequest, request: Reques
     if not user.get("can_resolve_exceptions", False):
         raise HTTPException(status_code=403, detail="İstisna onaylama yetkiniz bulunmamaktadır.")
     mgr = EngineManager.get_instance()
+    eng = mgr.engine
+
+    # İlgili personel bilgisi ve eski değer
+    person = next((p for p in eng.personnel_list if p["name_key"] == payload.name_key), None)
+    target_name = person["ad_soyad"] if person else payload.name_key
+    target_tc = person.get("tc", "") if person else ""
+    target_dept = person.get("bolum", "") if person else ""
+    old_rec = eng.daily_results.get((payload.name_key, payload.day))
+    old_val = f"{old_rec['final_hours']}s" if old_rec else "0.0s"
+    new_val = f"{payload.approved_hours}s"
+
     try:
         saved = mgr.resolve_exception(
             name_key=payload.name_key,
@@ -1288,6 +1341,25 @@ def resolve_exception_endpoint(payload: ExceptionResolveRequest, request: Reques
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
+
+    # Audit log
+    db = DatabaseManager()
+    db.log_action(
+        username=user.get("username", "system"),
+        user_name=user.get("name", "Bilinmeyen"),
+        user_role=user.get("role", "user"),
+        action_type="EXCEPTION_RESOLVE",
+        target_tc=target_tc,
+        target_name=target_name,
+        target_dept=target_dept,
+        day=payload.day,
+        old_value=old_val,
+        new_value=new_val,
+        reason=payload.note or "Eksik basım düzeltmesi / amir onayı",
+        ip_address=get_client_ip(request),
+        metadata={"name_key": payload.name_key, "approved_hours": payload.approved_hours}
+    )
+
     return {"status": "success", "message": "İstisna amir tarafından onaylandı ve puantaj güncellendi.", "data": saved}
 
 @app.post("/api/exceptions/bulk-resolve")
@@ -1311,6 +1383,25 @@ def bulk_resolve_exceptions_endpoint(payload: BulkExceptionResolveRequest, reque
         resolved_count = mgr.bulk_resolve_exceptions(items_to_resolve, resolved_by=payload.resolved_by or user.get("name") or "Vardiya Amiri / Toplu Onay")
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
+
+    # Audit log
+    db = DatabaseManager()
+    db.log_action(
+        username=user.get("username", "system"),
+        user_name=user.get("name", "Bilinmeyen"),
+        user_role=user.get("role", "user"),
+        action_type="BULK_RESOLVE",
+        target_tc="",
+        target_name=f"{resolved_count} Personel",
+        target_dept="Toplu Bölümler",
+        day=None,
+        old_value="Muhtelif Eksik Basımlar",
+        new_value=f"{resolved_count} Kayıt Onaylandı ({payload.action_type or 'toplu'})",
+        reason=payload.global_note or f"Toplu amir onayı ({resolved_count} kayıt)",
+        ip_address=get_client_ip(request),
+        metadata={"count": resolved_count, "action_type": payload.action_type}
+    )
+
     return {
         "status": "success",
         "message": f"{resolved_count} istisna kaydı başarıyla toplu onaylandı ve puantaj güncellendi.",
@@ -1499,10 +1590,30 @@ def update_rules(payload: RuleUpdateRequest, request: Request = None):
     user = get_current_user_from_request(request)
     if not user.get("can_edit_rules", False):
         raise HTTPException(status_code=403, detail="Fabrika kurallarını düzenleme yetkiniz bulunmamaktadır. Yalnızca Sistem Yöneticisi yetkilidir.")
+    old_rules = load_rules()
     save_rules(payload.rules)
     # Motoru yeni kurallarla yeniden yükle
     mgr = EngineManager.get_instance()
     mgr.load()
+
+    # Audit log
+    db = DatabaseManager()
+    db.log_action(
+        username=user.get("username", "admin"),
+        user_name=user.get("name", "Sistem Yöneticisi"),
+        user_role=user.get("role", "admin"),
+        action_type="RULE_UPDATE",
+        target_tc="",
+        target_name="Fabrika Vardiya & Mesai Kuralları",
+        target_dept="Tüm Fabrika",
+        day=None,
+        old_value=f"{len(old_rules.get('rules', []))} Kural",
+        new_value=f"{len(payload.rules.get('rules', []))} Kural",
+        reason="Vardiya ve tolerans parametreleri revizyonu",
+        ip_address=get_client_ip(request),
+        metadata={"updated_keys": list(payload.rules.keys())}
+    )
+
     return {"status": "success", "message": "Kurallar başarıyla güncellendi ve hesaplama motoru yeniden çalıştırıldı."}
 
 @app.post("/api/generate-reports")
@@ -1770,11 +1881,397 @@ async def upload_files(
     mgr = EngineManager.get_instance()
     mgr.load()
 
+    # Audit log
+    db = DatabaseManager()
+    db.log_action(
+        username="admin",
+        user_name="Sistem Yöneticisi",
+        user_role="admin",
+        action_type="FILE_UPLOAD",
+        target_tc="",
+        target_name=filename,
+        target_dept="Tüm Fabrika",
+        day=None,
+        old_value=os.path.basename(backup_path),
+        new_value=filename,
+        reason=f"Yeni {file_type.upper()} Excel veri dosyası yüklendi",
+        ip_address=get_client_ip(None),
+        metadata={"filename": filename, "backup": os.path.basename(backup_path)}
+    )
+
     return {
         "status": "success",
         "message": f"{filename} başarıyla yüklendi, yedeklendi ve sistem güncellendi.",
         "backup": os.path.basename(backup_path)
     }
+
+# -----------------------------------------------------------------------------
+# DEĞİŞİKLİK VE GÜVENLİK DENETİM İZİ (AUDIT TRAIL) ENDPOINTLERİ
+# -----------------------------------------------------------------------------
+def generate_audit_print_html(logs_data: Dict[str, Any], title: str = "Resmi İş Teftişi & İdari Değişiklik Denetim Tutanağı") -> str:
+    """T.C. Çalışma Bakanlığı ve SGK iş müfettişliği standartlarına uygun A4 resmi denetim izi tutanağı HTML'i üretir."""
+    summary = logs_data.get("summary", {})
+    items = logs_data.get("items", [])
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+    rows_html = []
+    for idx, it in enumerate(items, start=1):
+        action_title = it.get("action_type", "")
+        action_map = {
+            "EXCEPTION_RESOLVE": "Eksik Basım Onayı",
+            "BULK_RESOLVE": "Toplu Amir Onayı",
+            "RULE_UPDATE": "Kural Değişikliği",
+            "PERIOD_ROLLOVER": "Dönem Kapanış/Devir",
+            "ICRA_ADD": "İcra Kaydı / Haciz",
+            "FILE_UPLOAD": "Excel Veri Yükleme"
+        }
+        action_display = action_map.get(action_title, action_title)
+        day_str = f"Gün {it['day']}" if it.get("day") else "-"
+        
+        rows_html.append(f"""
+        <tr>
+            <td style="text-align: center; font-weight: bold;">{idx}</td>
+            <td style="white-space: nowrap; font-size: 11px;">{it.get('timestamp', '')}</td>
+            <td style="font-weight: 600;">{it.get('user_name', '')} <br><small style="color: #64748b;">({it.get('username', '')} - {it.get('user_role', '').upper()})</small></td>
+            <td><span class="badge">{action_display}</span></td>
+            <td><strong>{it.get('target_name', '')}</strong><br><small style="color: #64748b;">TC: {it.get('target_tc') or '-'} | Bölüm: {it.get('target_dept') or '-'}</small></td>
+            <td style="text-align: center;">{day_str}</td>
+            <td style="color: #dc2626; font-family: monospace; font-size: 11px;">{it.get('old_value') or '-'}</td>
+            <td style="color: #16a34a; font-weight: bold; font-family: monospace; font-size: 11px;">{it.get('new_value') or '-'}</td>
+            <td style="font-size: 11px;">{it.get('reason') or '-'}</td>
+            <td style="font-family: monospace; font-size: 10px; color: #64748b;">{it.get('ip_address') or '-'}</td>
+        </tr>
+        """)
+
+    rows_str = "".join(rows_html)
+
+    html = f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <style>
+        @page {{
+            size: A4 landscape;
+            margin: 10mm 12mm 12mm 12mm;
+        }}
+        body {{
+            font-family: Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #1e293b;
+            background: #fff;
+            margin: 0;
+            padding: 15px;
+            font-size: 12px;
+            line-height: 1.4;
+        }}
+        .header {{
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }}
+        .header-title h1 {{
+            margin: 0 0 4px 0;
+            font-size: 16px;
+            color: #0f172a;
+            letter-spacing: 0.5px;
+        }}
+        .header-title h2 {{
+            margin: 0;
+            font-size: 13px;
+            color: #475569;
+            font-weight: 500;
+        }}
+        .header-meta {{
+            text-align: right;
+            font-size: 11px;
+            color: #475569;
+        }}
+        .kpi-boxes {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }}
+        .kpi-card {{
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 6px;
+        }}
+        .kpi-label {{
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            font-weight: 600;
+        }}
+        .kpi-val {{
+            font-size: 16px;
+            font-weight: bold;
+            color: #0f172a;
+            margin-top: 2px;
+        }}
+        table.audit-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }}
+        table.audit-table th {{
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 10px;
+            text-transform: uppercase;
+            padding: 6px 8px;
+            text-align: left;
+            border: 1px solid #0f172a;
+        }}
+        table.audit-table td {{
+            border: 1px solid #cbd5e1;
+            padding: 6px 8px;
+            vertical-align: middle;
+        }}
+        table.audit-table tr:nth-child(even) {{
+            background: #f8fafc;
+        }}
+        .badge {{
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            background: #e2e8f0;
+            color: #334155;
+        }}
+        .legal-notice {{
+            font-size: 10px;
+            color: #64748b;
+            background: #f1f5f9;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border-left: 3px solid #0284c7;
+            margin-bottom: 18px;
+        }}
+        .signature-section {{
+            margin-top: 25px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            page-break-inside: avoid;
+        }}
+        .sig-box {{
+            border: 1px dashed #94a3b8;
+            padding: 10px;
+            text-align: center;
+            border-radius: 4px;
+            min-height: 85px;
+        }}
+        .sig-title {{
+            font-weight: bold;
+            font-size: 11px;
+            color: #0f172a;
+            margin-bottom: 4px;
+        }}
+        .sig-subtitle {{
+            font-size: 10px;
+            color: #64748b;
+        }}
+        .sig-line {{
+            margin-top: 40px;
+            border-top: 1px solid #cbd5e1;
+            font-size: 9px;
+            color: #94a3b8;
+            padding-top: 2px;
+        }}
+        @media print {{
+            body {{
+                padding: 0;
+            }}
+            .no-print {{
+                display: none !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="no-print" style="margin-bottom: 15px; background: #e0f2fe; padding: 10px 15px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: #0369a1; font-weight: 500;">🖨️ Bu resmi denetim tutanağını yazdırmak veya PDF olarak kaydetmek için tarayıcınızın Yazdır (Ctrl+P) komutunu kullanabilirsiniz.</span>
+        <button onclick="window.print()" style="background: #0284c7; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer;">Hemen Yazdır (Ctrl+P)</button>
+    </div>
+
+    <div class="header">
+        <div class="header-title">
+            <h1>FİDE KONSERVE GIDA SAN. VE TİC. A.Ş.</h1>
+            <h2>RESMİ İŞ MÜFETTİŞLİĞİ & İÇ DENETİM DEĞİŞİKLİK İZİ (AUDIT TRAIL) TUTANAĞI</h2>
+        </div>
+        <div class="header-meta">
+            <div><strong>Tanzim Tarihi:</strong> {now_str}</div>
+            <div><strong>Yasal Kapsam:</strong> 4857 S.K. Md. 41 & 6698 S.K.</div>
+            <div><strong>Sistem:</strong> PDKS & Puantaj v2.0</div>
+        </div>
+    </div>
+
+    <div class="kpi-boxes">
+        <div class="kpi-card">
+            <div class="kpi-label">Toplam İdari Değişiklik</div>
+            <div class="kpi-val">{summary.get('total_logs', len(items))} İşlem</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Saat ve Mesai Revizyonu</div>
+            <div class="kpi-val">{summary.get('hours_revisions', 0)} Kayıt</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Bugünkü İşlemler</div>
+            <div class="kpi-val">{summary.get('today_logs', 0)} Kayıt</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">En Aktif Yetkili</div>
+            <div class="kpi-val" style="font-size: 13px;">{summary.get('most_active_user', '-')}</div>
+        </div>
+    </div>
+
+    <div class="legal-notice">
+        <strong>YASAL UYARI VE İŞ MÜFETTİŞLİĞİ BEYANI:</strong> Bu tutanak, Fide Konserve fabrikasında çalışan personelin PDKS giriş-çıkış hareketleri, saat düzeltmeleri, vardiya amiri onayları ve icra kesintileri üzerinde yetkili idari personel tarafından gerçekleştirilen tüm tekil ve toplu müdahaleleri zaman damgalı, gerekçeli ve IP adresli olarak belgeler. Kayıtlar SQLite ilişkisel veritabanı kütüğünde değiştirilemez olarak saklanmaktadır.
+    </div>
+
+    <table class="audit-table">
+        <thead>
+            <tr>
+                <th style="width: 30px; text-align: center;">No</th>
+                <th style="width: 110px;">Zaman Damgası</th>
+                <th style="width: 140px;">İşlemi Yapan Yetkili</th>
+                <th style="width: 120px;">İşlem Türü</th>
+                <th>İlgili Personel / Kapsam</th>
+                <th style="width: 50px; text-align: center;">Gün</th>
+                <th style="width: 75px;">Eski Değer</th>
+                <th style="width: 75px;">Yeni Değer</th>
+                <th>İdari Dayanak / Gerekçe</th>
+                <th style="width: 85px;">İstemci IP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_str}
+        </tbody>
+    </table>
+
+    <div class="signature-section">
+        <div class="sig-box">
+            <div class="sig-title">DÜZENLEYEN</div>
+            <div class="sig-subtitle">Sistem Yetkilisi / Raportör</div>
+            <div class="sig-line">İmza / Mühür</div>
+        </div>
+        <div class="sig-box">
+            <div class="sig-title">VARDİYA & BÖLÜM AMİRİ</div>
+            <div class="sig-subtitle">Saha Onay Sorumlusu</div>
+            <div class="sig-line">İmza / Tarih</div>
+        </div>
+        <div class="sig-box">
+            <div class="sig-title">İNSAN KAYNAKLARI MÜDÜRÜ</div>
+            <div class="sig-subtitle">Özlük ve Puantaj Denetimi</div>
+            <div class="sig-line">İmza / Tarih</div>
+        </div>
+        <div class="sig-box">
+            <div class="sig-title">FABRİKA MÜDÜRÜ / GENEL MÜDÜR</div>
+            <div class="sig-subtitle">Bordro ve Yasal Uygunluk Onayı</div>
+            <div class="sig-line">İmza / Mühür</div>
+        </div>
+    </div>
+</body>
+</html>"""
+    return html
+
+@app.get("/api/audit/logs")
+def get_audit_logs_endpoint(
+    search: Optional[str] = Query(None),
+    action_type: Optional[str] = Query(None),
+    username: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    request: Request = None
+):
+    """Zaman damgalı idari değişiklik ve güvenlik denetim izi kütüğünü döner."""
+    user = get_current_user_from_request(request)
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+    
+    # Unwrap default Query params if called directly
+    if hasattr(page, 'default'): page = page.default
+    if hasattr(page_size, 'default'): page_size = page_size.default
+    if hasattr(search, 'default'): search = search.default
+    if hasattr(action_type, 'default'): action_type = action_type.default
+    if hasattr(username, 'default'): username = username.default
+
+    page = int(page or 1)
+    page_size = int(page_size or 50)
+    search_val = _clean_str(search)
+    action_val = _clean_str(action_type)
+    user_val = _clean_str(username)
+
+    return db.get_audit_logs(
+        search=search_val,
+        action_type=action_val,
+        username=user_val,
+        page=page,
+        page_size=page_size
+    )
+
+@app.get("/api/audit/export/excel")
+def export_audit_excel_endpoint(
+    search: Optional[str] = Query(None),
+    action_type: Optional[str] = Query(None),
+    username: Optional[str] = Query(None),
+    request: Request = None
+):
+    """Denetim izi kayıtlarını kurumsal Excel raporu olarak indirir."""
+    user = get_current_user_from_request(request)
+    if not user.get("can_export_reports", True):
+        raise HTTPException(status_code=403, detail="Rapor alma yetkiniz bulunmamaktadır.")
+
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+
+    if hasattr(search, 'default'): search = search.default
+    if hasattr(action_type, 'default'): action_type = action_type.default
+    if hasattr(username, 'default'): username = username.default
+
+    search_val = _clean_str(search)
+    action_val = _clean_str(action_type)
+    user_val = _clean_str(username)
+
+    excel_bytes = db.export_audit_excel(search=search_val, action_type=action_val, username=user_val)
+    filename = f"Fide_Konserve_Denetim_Izi_Tutanagi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/api/audit/print/html", response_class=HTMLResponse)
+def get_audit_print_html_endpoint(
+    search: Optional[str] = Query(None),
+    action_type: Optional[str] = Query(None),
+    username: Optional[str] = Query(None),
+    request: Request = None
+):
+    """İş Müfettişliği ve İç Denetim için A4 resmi yazdırılabilir HTML tutanak üretir."""
+    db = DatabaseManager()
+    mgr = EngineManager.get_instance()
+    db.seed_initial_data(mgr.engine)
+
+    if hasattr(search, 'default'): search = search.default
+    if hasattr(action_type, 'default'): action_type = action_type.default
+    if hasattr(username, 'default'): username = username.default
+
+    search_val = _clean_str(search)
+    action_val = _clean_str(action_type)
+    user_val = _clean_str(username)
+
+    data = db.get_audit_logs(search=search_val, action_type=action_val, username=user_val, page=1, page_size=1000)
+    html_content = generate_audit_print_html(data)
+    return HTMLResponse(content=html_content, status_code=200)
 
 # -----------------------------------------------------------------------------
 # STATİK DOSYALAR VE ANA SAYFA
