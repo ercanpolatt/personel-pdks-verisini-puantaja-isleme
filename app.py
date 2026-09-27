@@ -13,13 +13,14 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Body, Request
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from pdks_engine import PDKSEngine, fmt_hours_tr, norm_name_key, clean_display_text
 from slip_builder import generate_single_slip_html, render_slips_document
+from erp_exporter import ERPExporter
 
 def _clean_str(val: Any) -> Optional[str]:
     if val is None or not isinstance(val, str):
@@ -1440,6 +1441,10 @@ def generate_reports():
 
 @app.get("/api/download/{report_type}")
 def download_report(report_type: str):
+    if report_type.startswith("erp_"):
+        fmt = report_type.replace("erp_", "")
+        return export_erp_format(fmt)
+
     file_map = {
         "puantaj_xlsx": ("puantaj.xlsx", "Fide_Konserve_Puantaj_Bordro.xlsx"),
         "gunluk_xlsx": ("gunluk_calisma_raporu.xlsx", "Fide_Konserve_Gunluk_Calisma_Raporu.xlsx"),
@@ -1473,6 +1478,173 @@ def download_report(report_type: str):
         filename=download_name,
         media_type="application/octet-stream"
     )
+
+# -----------------------------------------------------------------------------
+# ERP & BORDRO YAZILIMLARI ENTEGRASYON ENDPOINTLERİ
+# -----------------------------------------------------------------------------
+@app.get("/api/erp/formats")
+def get_erp_formats(request: Request = None):
+    """Desteklenen ERP ve Bordro entegrasyon formatlarının listesini ve açıklamalarını döner."""
+    user = get_current_user_from_request(request)
+    if not user.get("can_export_reports", False):
+        raise HTTPException(status_code=403, detail="Rapor ve bordro aktarım yetkiniz bulunmamaktadır.")
+    
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    active_count = len([p for p in mgr.matrix if p.get("total_work_days", 0) > 0])
+    
+    formats = [
+        {
+            "id": "logo",
+            "name": "Logo Tiger / Logo Bordro",
+            "erp_name": "Logo Yazılım (Tiger 3, GO 3, Bordro Plus)",
+            "file_ext": ".xml",
+            "mime_type": "application/xml",
+            "icon": "🦁",
+            "badge": "Kurumsal ERP / XML",
+            "badge_color": "blue",
+            "description": "Logo standart XML şemasına tam uyumlu puantaj kartı aktarımı. 500+ personel kartını saniyeler içinde içe aktarır.",
+            "menu_path": "Bordro > Puantaj Kartları > XML İçe Aktar",
+            "records_count": active_count
+        },
+        {
+            "id": "luca",
+            "name": "TÜRMOB Luca Bordro",
+            "erp_name": "Luca Mali Müşavir / Luca Net",
+            "file_ext": ".xlsx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "icon": "☁️",
+            "badge": "TÜRMOB Luca / Excel",
+            "badge_color": "teal",
+            "description": "Luca Bordro modülü standart Excel puantaj yükleme şablonu. SGK gün, normal gün, hafta tatili, mesai ve eksik gün kodlarıyla hazır.",
+            "menu_path": "Personel > Puantaj İşlemleri > Excel Puantaj Yükle",
+            "records_count": active_count
+        },
+        {
+            "id": "mikro",
+            "name": "Mikro Fly / Mikro Jump",
+            "erp_name": "Mikro Yazılım (Fly, Jump, Standart)",
+            "file_ext": ".xlsx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "icon": "⚡",
+            "badge": "Mikro Bordro / Excel",
+            "badge_color": "indigo",
+            "description": "Mikro Fly/Jump Personel Yönetimi puantaj aktarım Excel formatı. 1.5x hafta içi ve 1.5x pazar mesaileri ayrıştırılmış.",
+            "menu_path": "Personel Yönetimi > Puantaj Listesi > Excel'den Al",
+            "records_count": active_count
+        },
+        {
+            "id": "zirve",
+            "name": "Zirve Müşavir / Bordro",
+            "erp_name": "Zirve Yazılım (Müşavir, Ticari, Bordro)",
+            "file_ext": ".xlsx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "icon": "🏔️",
+            "badge": "Zirve Bordro / Excel",
+            "badge_color": "emerald",
+            "description": "Zirve Bordro modülüne uyumlu Excel import formatı. TC Kimlik No, İcra kesintileri, prim ve ek kazanç kolonlarıyla eksiksiz.",
+            "menu_path": "Bordro-Personel > Puantaj Tablosu > Excel'den Puantaj Oku",
+            "records_count": active_count
+        },
+        {
+            "id": "universal_csv",
+            "name": "Evrensel ERP / CSV",
+            "erp_name": "SAP HR, Nebim, Datassist, Şirket İçi ERP",
+            "file_ext": ".csv",
+            "mime_type": "text/csv",
+            "icon": "🌐",
+            "badge": "UTF-8 BOM / Noktalı Virgül",
+            "badge_color": "slate",
+            "description": "Excel'de doğrudan çift tıklamayla hatasız açılan Türkçe UTF-8 BOM ve noktalı virgüllü evrensel CSV entegrasyon dosyası.",
+            "menu_path": "Tüm ERP ve Muhasebe Sistemleri (Import)",
+            "records_count": active_count
+        },
+        {
+            "id": "bundle",
+            "name": "Tüm ERP Paketleri (.ZIP)",
+            "erp_name": "Hepsi Bir Arada Entegrasyon Paketi",
+            "file_ext": ".zip",
+            "mime_type": "application/zip",
+            "icon": "📦",
+            "badge": "5 ERP Formatı + Kılavuz",
+            "badge_color": "amber",
+            "description": "Logo XML, Luca Excel, Mikro Excel, Zirve Excel, Evrensel CSV ve Kullanım Kılavuzunu içeren tek tıkla arşiv paketi.",
+            "menu_path": "Toplu Arşiv İndirme",
+            "records_count": active_count
+        }
+    ]
+    return {
+        "status": "success",
+        "period": f"{eng.target_month:02d}.{eng.target_year}",
+        "active_personnel_count": active_count,
+        "formats": formats
+    }
+
+@app.get("/api/erp/export/{format_id}")
+def export_erp_format(format_id: str, request: Request = None):
+    """Seçilen ERP formatında resmi aktarım dosyasını üretir ve indirir."""
+    user = get_current_user_from_request(request)
+    if not user.get("can_export_reports", False):
+        raise HTTPException(status_code=403, detail="Rapor ve bordro aktarım yetkiniz bulunmamaktadır.")
+    
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    exporter = ERPExporter(eng)
+    
+    month_str = f"{eng.target_year}_{eng.target_month:02d}"
+    fmt = format_id.lower().strip()
+    
+    if fmt == "logo":
+        xml_data = exporter.generate_logo_xml()
+        filename = f"Logo_Tiger_Puantaj_Aktarim_{month_str}.xml"
+        return Response(
+            content=xml_data,
+            media_type="application/xml; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    elif fmt == "luca":
+        excel_data = exporter.generate_luca_excel()
+        filename = f"Luca_Bordro_Puantaj_Aktarim_{month_str}.xlsx"
+        return Response(
+            content=excel_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    elif fmt == "mikro":
+        excel_data = exporter.generate_mikro_excel()
+        filename = f"Mikro_Bordro_Puantaj_Aktarim_{month_str}.xlsx"
+        return Response(
+            content=excel_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    elif fmt == "zirve":
+        excel_data = exporter.generate_zirve_excel()
+        filename = f"Zirve_Bordro_Puantaj_Aktarim_{month_str}.xlsx"
+        return Response(
+            content=excel_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    elif fmt in ("universal_csv", "csv", "evrensel"):
+        csv_data = exporter.generate_universal_csv()
+        filename = f"Evrensel_ERP_Puantaj_Aktarim_{month_str}.csv"
+        return Response(
+            content=csv_data,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    elif fmt in ("bundle", "all_zip", "all", "zip"):
+        zip_data = exporter.generate_all_bundle_zip()
+        filename = f"Fide_Konserve_ERP_Bordro_Paketi_{month_str}.zip"
+        return Response(
+            content=zip_data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    else:
+        raise HTTPException(status_code=400, detail=f"Desteklenmeyen ERP formatı: {format_id}. Geçerli seçenekler: logo, luca, mikro, zirve, universal_csv, bundle")
+
 
 @app.post("/api/upload")
 async def upload_files(

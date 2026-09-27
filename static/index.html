@@ -1008,6 +1008,168 @@
     <!-- ======================================================================= -->
     <section class="tab-content" id="tab-reports">
       
+      <!-- ======================================================================= -->
+      <!-- ERP & BORDRO YAZILIMLARI DOĞRUDAN AKTARIM MERKEZİ                     -->
+      <!-- ======================================================================= -->
+      <div class="erp-transfer-section">
+        <div class="erp-header-card">
+          <div class="erp-header-left">
+            <div class="erp-icon-badge">🔗</div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <h3 class="erp-section-title">Muhasebe ve ERP Yazılımlarına Tek Tıkla Aktarım (Bordro Entegrasyonu)</h3>
+                <span class="badge badge-success" style="font-size: 11px;">Aktif &amp; Hazır</span>
+              </div>
+              <p class="erp-section-desc">
+                Türkiye'de gıda/konserve fabrikalarında yaygın kullanılan resmi muhasebe programlarına doğrudan içe aktarılabilir (import) resmi formatta dosya üretimi.
+                <strong>250 personelin saatlerini ERP programına elle girmeyi sıfırlayarak 2-3 günlük mesai tasarrufu sağlar ve insan hatasını ortadan kaldırır.</strong>
+              </p>
+            </div>
+          </div>
+          <div class="erp-header-actions">
+            <a href="/api/erp/export/bundle" class="btn btn-warning btn-lg" style="box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25);" download>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              <span>📦 Tüm ERP Paketlerini İndir (.ZIP)</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- ERP Cards Grid -->
+        <div class="erp-grid">
+          <!-- Logo Tiger -->
+          <div class="erp-card erp-card-logo">
+            <div class="erp-card-top">
+              <span class="erp-badge badge-blue">Logo XML Şablonu</span>
+              <span class="erp-logo-icon">🦁</span>
+            </div>
+            <h4 class="erp-card-name">Logo Tiger &amp; Logo Bordro</h4>
+            <div class="erp-target-system">Tiger 3, GO 3, Bordro Plus (.xml)</div>
+            <p class="erp-card-desc">
+              Logo standart XML şemasına tam uyumlu puantaj kartı aktarımı. 250 personelin normal çalışma, 1.5x hafta içi ve pazar mesaileri, kesintileri ve eksik gün kodlarıyla aktarılır.
+            </p>
+            <div class="erp-meta-info">
+              <span>Menü: <strong>Bordro &gt; Puantaj Kartları &gt; XML İçe Aktar</strong></span>
+            </div>
+            <div class="erp-card-footer">
+              <a href="/api/erp/export/logo" class="btn btn-primary btn-block" download>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Logo XML İndir (.xml)</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- TÜRMOB Luca -->
+          <div class="erp-card erp-card-luca">
+            <div class="erp-card-top">
+              <span class="erp-badge badge-teal">TÜRMOB Luca Excel</span>
+              <span class="erp-logo-icon">☁️</span>
+            </div>
+            <h4 class="erp-card-name">TÜRMOB Luca Bordro</h4>
+            <div class="erp-target-system">Luca Mali Müşavir &amp; Luca Net (.xlsx)</div>
+            <p class="erp-card-desc">
+              Luca Bordro modülü standart Excel puantaj yükleme şablonu. TC Kimlik No, SGK gün, normal gün, hafta tatili, mesai ve eksik gün kodlarıyla resmi şablona birebir eşlenmiştir.
+            </p>
+            <div class="erp-meta-info">
+              <span>Menü: <strong>Personel &gt; Puantaj İşlemleri &gt; Excel Puantaj Yükle</strong></span>
+            </div>
+            <div class="erp-card-footer">
+              <a href="/api/erp/export/luca" class="btn btn-teal btn-block" download>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Luca Excel İndir (.xlsx)</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Mikro Yazılım -->
+          <div class="erp-card erp-card-mikro">
+            <div class="erp-card-top">
+              <span class="erp-badge badge-indigo">Mikro Bordro Excel</span>
+              <span class="erp-logo-icon">⚡</span>
+            </div>
+            <h4 class="erp-card-name">Mikro Fly / Mikro Jump</h4>
+            <div class="erp-target-system">Mikro Fly, Jump, Standart V16 (.xlsx)</div>
+            <p class="erp-card-desc">
+              Mikro Personel Yönetimi puantaj aktarım Excel formatı. 1.5x hafta içi fazla mesai ve 1.5x hafta tatili mesaileri ile prim hak edişleri ayrı sütunlarda hazırdır.
+            </p>
+            <div class="erp-meta-info">
+              <span>Menü: <strong>Personel &gt; Puantaj Listesi &gt; Excel'den Al</strong></span>
+            </div>
+            <div class="erp-card-footer">
+              <a href="/api/erp/export/mikro" class="btn btn-indigo btn-block" download>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Mikro Excel İndir (.xlsx)</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Zirve Müşavir -->
+          <div class="erp-card erp-card-zirve">
+            <div class="erp-card-top">
+              <span class="erp-badge badge-emerald">Zirve Müşavir Excel</span>
+              <span class="erp-logo-icon">🏔️</span>
+            </div>
+            <h4 class="erp-card-name">Zirve Müşavir &amp; Bordro</h4>
+            <div class="erp-target-system">Zirve Müşavir, Ticari &amp; Bordro (.xlsx)</div>
+            <p class="erp-card-desc">
+              Zirve Bordro-Personel modülüne uygun Excel import formatı. TC Kimlik No, icra kesintileri, prim ve ek kazanç kolonlarıyla eksiksiz aktarım sağlar.
+            </p>
+            <div class="erp-meta-info">
+              <span>Menü: <strong>Bordro-Personel &gt; Puantaj &gt; Excel'den Puantaj Oku</strong></span>
+            </div>
+            <div class="erp-card-footer">
+              <a href="/api/erp/export/zirve" class="btn btn-emerald btn-block" download>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Zirve Excel İndir (.xlsx)</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Evrensel CSV / SAP -->
+          <div class="erp-card erp-card-universal">
+            <div class="erp-card-top">
+              <span class="erp-badge badge-slate">Evrensel ERP / CSV</span>
+              <span class="erp-logo-icon">🌐</span>
+            </div>
+            <h4 class="erp-card-name">Evrensel ERP &amp; SAP HR</h4>
+            <div class="erp-target-system">SAP HR, Nebim, Datassist, Özel ERP (.csv)</div>
+            <p class="erp-card-desc">
+              Excel'de doğrudan çift tıklamayla hatasız açılan Türkçe UTF-8 BOM ve noktalı virgüllü evrensel CSV entegrasyon dosyası. Herhangi bir veritabanı veya ERP'ye aktarılabilir.
+            </p>
+            <div class="erp-meta-info">
+              <span>Biçim: <strong>UTF-8 BOM, Noktalı Virgül (;) Ayrılmış</strong></span>
+            </div>
+            <div class="erp-card-footer">
+              <a href="/api/erp/export/universal_csv" class="btn btn-secondary btn-block" download>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Evrensel CSV İndir (.csv)</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- All-in-One ZIP Bundle -->
+          <div class="erp-card erp-card-bundle">
+            <div class="erp-card-top">
+              <span class="erp-badge badge-amber">Hepsi Bir Arada Paket</span>
+              <span class="erp-logo-icon">📦</span>
+            </div>
+            <h4 class="erp-card-name">Tüm ERP Formatları Paketi</h4>
+            <div class="erp-target-system">Logo, Luca, Mikro, Zirve, CSV, Kılavuz (.zip)</div>
+            <p class="erp-card-desc">
+              Tüm 5 formatı ve muhasebe departmanı için adım adım ERP yükleme talimatlarını içeren <strong>README_ERP_KULLANIM_KILAVUZU.txt</strong> dosyasını tek tıkla indirir.
+            </p>
+            <div class="erp-meta-info">
+              <span>İçerik: <strong>5 Resmi Dosya + Kullanım Kılavuzu</strong></span>
+            </div>
+            <div class="erp-card-footer">
+              <a href="/api/erp/export/bundle" class="btn btn-warning btn-block" download>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Tüm Paketi İndir (.zip)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="reports-layout-grid">
         
         <!-- Left Column: Report Downloads & File Upload -->
