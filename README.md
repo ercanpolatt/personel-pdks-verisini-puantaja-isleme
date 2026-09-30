@@ -13,11 +13,29 @@ FİDE Konserve için özel olarak geliştirilmiş; personel devam kontrol sistem
 Bu sistem, karmaşık personel giriş-çıkış verilerini analiz ederek, İnsan Kaynakları ve Muhasebe departmanları için puantaj hesaplama sürecini tam otomatik hale getirir. Excel ve CSV formatındaki karmaşık PDKS verilerini alır, akıllı algoritmalarla eksik veya hatalı basımları tespit eder, vardiyaları hesaplar ve ERP sistemlerine entegre edilebilir raporlar sunar.
 
 ## ✨ Temel Özellikler
-- **🔄 Otomatik PDKS Analizi:** Personel kart basım verilerini (giriş-çıkış saatleri) otomatik yorumlama.
-- **⏱️ Vardiya ve Mesai Hesaplama:** Normal çalışma, fazla mesai, pazar mesaisi ve gece vardiyası sürelerinin otomatik tespiti.
-- **🛡️ Hata ve İstisna Yönetimi:** Kart basmayı unutan veya hatalı basım yapan personellerin durumlarını tespit edip raporlama.
-- **📊 Gelişmiş Raporlama:** Excel formatında detaylı puantaj cetvelleri, günlük çalışma raporları ve maliyet analizleri oluşturma.
-- **⚡ Hızlı ve Güvenilir:** Python, FastAPI ve Pandas altyapısıyla büyük veri setlerinde bile saniyeler içinde sonuç üretme.
+
+### 🔄 Otomatik PDKS Analizi
+Personel kart basım verilerini (giriş-çıkış saatleri) otomatik olarak yorumlar ve işler.
+![PDKS Analizi](assets/app_screen_1.png)
+
+### ⏱️ Vardiya ve Mesai Hesaplama
+Normal çalışma, fazla mesai, pazar mesaisi ve gece vardiyası sürelerinin otomatik tespitini sağlar.
+![Vardiya Hesaplama](assets/app_screen_2.png)
+
+### 🛡️ Hata ve İstisna Yönetimi
+Kart basmayı unutan veya hatalı basım yapan personellerin durumlarını anında tespit edip İK'ya raporlar.
+![İstisna Yönetimi](assets/app_screen_3.png)
+
+### 📊 Gelişmiş Raporlama
+Excel formatında detaylı puantaj cetvelleri, günlük çalışma raporları ve maliyet analizleri oluşturur.
+![Gelişmiş Raporlama](assets/app_screen_4.png)
+
+### ⚡ Hızlı ve Güvenilir Altyapı
+Python, FastAPI ve Pandas altyapısıyla büyük veri setlerinde bile saniyeler içinde sonuç üretir.
+![Sistem Altyapısı](assets/app_screen_5.png)
+
+*(Sistemden Ekstra Bir Görünüm)*
+![Ekstra Görünüm](assets/app_screen_6.png)
 
 ---
 
@@ -30,21 +48,7 @@ Sistemin web tabanlı arayüzü üzerinden PDKS verilerini yönetebilir ve detay
 [![Sistem Kullanım Videosu](https://img.youtube.com/vi/OnxTkWwbZQA/hqdefault.jpg)](https://youtu.be/OnxTkWwbZQA "Puantaj Sistemi Demo İzle")
 <br>
 
-**🖼️ Ekran Görüntüleri:**
-<div align="center">
-  <img src="assets/app_screen_1.png" width="48%">
-  <img src="assets/app_screen_2.png" width="48%">
-</div>
-<br>
-<div align="center">
-  <img src="assets/app_screen_3.png" width="48%">
-  <img src="assets/app_screen_4.png" width="48%">
-</div>
-<br>
-<div align="center">
-  <img src="assets/app_screen_5.png" width="48%">
-  <img src="assets/app_screen_6.png" width="48%">
-</div>
+
 
 ---
 
