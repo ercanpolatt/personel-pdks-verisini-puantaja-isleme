@@ -26,10 +26,8 @@ Bu sistem, karmaşık personel giriş-çıkış verilerini analiz ederek, İnsan
 Sistemin web tabanlı arayüzü üzerinden PDKS verilerini yönetebilir ve detaylı raporlara tek tıkla ulaşabilirsiniz.
 
 **🎥 Sistem Kullanım Videosu:**
-<video width="100%" controls>
-  <source src="assets/demo_video.mp4" type="video/mp4">
-  Tarayıcınız video etiketini desteklemiyor.
-</video>
+
+[![Sistem Kullanım Videosu](https://img.youtube.com/vi/OnxTkWwbZQA/hqdefault.jpg)](https://youtu.be/OnxTkWwbZQA "Puantaj Sistemi Demo İzle")
 <br>
 
 **🖼️ Ekran Görüntüleri:**
