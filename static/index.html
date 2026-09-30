@@ -58,6 +58,11 @@
         <svg class="user-dropdown-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
 
+      <a href="/saha" class="btn btn-secondary" title="Vardiya Amiri Saha El Terminali ve Mobil Arayüz" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
+        <span style="font-size: 15px;">📱</span>
+        <span>Saha El Terminali</span>
+      </a>
+
       <button class="btn btn-primary" id="btnHeaderGenerate">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10"/>
@@ -566,9 +571,9 @@
             </svg>
           </div>
           <div class="kpi-info">
-            <span class="kpi-label">Balık Dolum ve Kesim Primi</span>
-            <span class="kpi-value" id="valFishBonus">346,0 <small>saat</small></span>
-            <span class="kpi-sub">Çalışılan her güne +2.0s (173 hak ediş)</span>
+            <span class="kpi-label">Prim Alan Kişi Sayısı</span>
+            <span class="kpi-value" id="valBonusPersonCount">0</span>
+            <span class="kpi-sub">Bu Ay Prim Hakeden Personel</span>
           </div>
         </div>
 
@@ -580,9 +585,9 @@
             </svg>
           </div>
           <div class="kpi-info">
-            <span class="kpi-label">Üretim Primi (12s Üzeri)</span>
-            <span class="kpi-value" id="valProdBonus">28,0 <small>saat</small></span>
-            <span class="kpi-sub">12s ve üzeri çalışmalara +4.0s</span>
+            <span class="kpi-label">En Çok Prim Alan Bölüm</span>
+            <span class="kpi-value" id="valTopBonusDept" style="font-size: 1.25rem;">-</span>
+            <span class="kpi-sub" id="subTopBonusDeptHours">0 Saat</span>
           </div>
         </div>
       </div>
@@ -1611,33 +1616,23 @@
               </div>
 
               <h4 class="form-section-title">Özel Bölüm Primleri</h4>
-              <div class="form-grid-1">
-                <div class="rule-box">
-                  <strong>🐟 Balık Dolum ve Kesim Primi</strong>
-                  <p>Çalışılan günde saat fark etmeksizin eklenen prim:</p>
-                  <div class="form-grid-2" style="margin-top: 8px;">
-                    <div class="form-group">
-                      <label>Eklenen Bonus Saati</label>
-                      <input type="number" step="0.5" id="ruleFishBonus" class="form-input" value="2.0">
-                    </div>
-                    <div class="form-group">
-                      <label>Minimum Çalışma Eşiği (Saat)</label>
-                      <input type="number" step="0.5" id="ruleFishThreshold" class="form-input" value="0.0">
-                    </div>
+              <p class="card-desc">İstediğiniz bölümlere özel mesai prim kuralları tanımlayabilirsiniz.</p>
+              <div id="dynamicBonusesContainer" class="form-grid-1" style="margin-bottom: 10px;">
+                <!-- Dinamik prim kuralları buraya eklenecek -->
+              </div>
+              <div class="rule-box" style="margin-top: 10px; background: rgba(168, 85, 247, 0.05); border: 1px dashed rgba(168, 85, 247, 0.4);">
+                <strong>Yeni Prim Ekle</strong>
+                <div class="form-grid-2" style="margin-top: 8px;">
+                  <div class="form-group">
+                    <label>Bölüm Seç veya Yaz</label>
+                    <input type="text" id="newBonusDept" class="form-input" placeholder="Örn: BALIK DOLUM" list="deptDatalist">
+                    <datalist id="deptDatalist"></datalist>
                   </div>
-                </div>
-
-                <div class="rule-box">
-                  <strong>🏭 Üretim Primi</strong>
-                  <p>Ağır üretim mesaileri için belirlenen eşik ve eklenen bonus:</p>
-                  <div class="form-grid-2" style="margin-top: 8px;">
-                    <div class="form-group">
-                      <label>Minimum Çalışma Eşiği (Saat)</label>
-                      <input type="number" step="0.5" id="ruleProdThreshold" class="form-input" value="12.0">
-                    </div>
-                    <div class="form-group">
-                      <label>Eklenen Bonus Saati</label>
-                      <input type="number" step="0.5" id="ruleProdBonus" class="form-input" value="4.0">
+                  <div class="form-group">
+                    <label>Eklenen Bonus Saati</label>
+                    <div style="display: flex; gap: 10px;">
+                      <input type="number" step="0.5" id="newBonusHours" class="form-input" placeholder="2.0">
+                      <button type="button" class="btn btn-primary" onclick="addBonusRule()">Ekle</button>
                     </div>
                   </div>
                 </div>

@@ -60,7 +60,7 @@ def test_db_init_and_tables(temp_db):
 
 
 def test_seed_initial_data(temp_db):
-    """PDKS motorundaki 250 personel, icra listesi ve kümülatif mesai SQLite'a aktarılmalıdır."""
+    """PDKS motorundaki 254 personel, icra listesi ve kümülatif mesai SQLite'a aktarılmalıdır."""
     mgr = EngineManager.get_instance()
     mgr.load()
 
@@ -77,12 +77,12 @@ def test_seed_initial_data(temp_db):
     assert len(periods) >= 1
     assert periods[0]["period_key"] == "2026-09"
     assert periods[0]["status"] == "active"
-    assert periods[0]["active_personnel_count"] == 250
+    assert periods[0]["active_personnel_count"] == 254
 
     # Personel kayıtları kontrolü
     details = temp_db.get_period_details("2026-09")
     assert details is not None
-    assert len(details["records"]) == 250
+    assert len(details["records"]) == 254
 
 
 def test_cumulative_overtime_270h_rules(temp_db):
@@ -93,7 +93,7 @@ def test_cumulative_overtime_270h_rules(temp_db):
 
     report = temp_db.get_cumulative_overtime_report(year=2026)
     assert report["year"] == 2026
-    assert report["total_personnel"] == 250
+    assert report["total_personnel"] == 254
 
     kpis = report["kpis"]
     assert kpis["legal_limit_hours"] == 270.0
@@ -101,11 +101,11 @@ def test_cumulative_overtime_270h_rules(temp_db):
     assert "warning_count" in kpis
     assert "critical_count" in kpis
     assert "exceeded_count" in kpis
-    assert (kpis["safe_count"] + kpis["warning_count"] + kpis["critical_count"] + kpis["exceeded_count"]) == 250
+    assert (kpis["safe_count"] + kpis["warning_count"] + kpis["critical_count"] + kpis["exceeded_count"]) == 254
 
     # Personel kayıtlarında 12 ay sütunları ve kalan süre kontrolü
     personnel = report["personnel"]
-    assert len(personnel) == 250
+    assert len(personnel) == 254
     for p in personnel[:10]:
         assert "m01" in p and "m09" in p and "m12" in p
         assert p["remaining_limit_hours"] >= 0.0
@@ -154,12 +154,12 @@ def test_api_archive_endpoints():
     res_detail = get_period_details_endpoint("2026-09", req_admin)
     assert res_detail["status"] == "success"
     assert res_detail["period"]["period_key"] == "2026-09"
-    assert len(res_detail["period"]["records"]) == 250
+    assert len(res_detail["period"]["records"]) == 254
 
     # 3. Yıllık 270 Saat Mesai Kütüğü API
     res_ot = get_cumulative_overtime_endpoint(year=2026, request=req_admin)
     assert res_ot["year"] == 2026
-    assert res_ot["total_personnel"] == 250
+    assert res_ot["total_personnel"] == 254
     assert "kpis" in res_ot
 
     # 4. İcra Takip Masası API

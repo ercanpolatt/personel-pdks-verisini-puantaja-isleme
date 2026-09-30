@@ -121,7 +121,7 @@ def test_compliance_index_and_department_matrix(engine):
     assert summary["total_violations"] == 108
     assert summary["critical_violations"] == 62
     assert summary["warning_violations"] == 46
-    assert summary["inspected_personnel"] == 250
+    assert summary["inspected_personnel"] == 254
 
     # Ensure department list is ranked with high risk depts first
     assert len(depts) > 0

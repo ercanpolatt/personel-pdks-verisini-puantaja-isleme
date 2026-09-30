@@ -3,7 +3,7 @@ Tests for Feature 3: Printable A4 / PDF Monthly Attendance & Overtime Reconcilia
 (Aylık Çalışma ve Fazla Mesai Mutabakat Pusulası)
 Verifies:
 1. Single employee slip generation (A4 layout, 30 days, personal info, disclaimers, dual signatures)
-2. Bulk factory slips generation (250 active employees, continuous multipage A4 printing)
+2. Bulk factory slips generation (254 active employees, continuous multipage A4 printing)
 3. Department-filtered bulk slips (e.g. Balık Dolum: 9 employees)
 4. Auto-print script integration
 5. 404 handling on invalid employee
@@ -54,15 +54,15 @@ def test_single_slip_rendering(engine):
 
 
 def test_bulk_slips_rendering_all_active(engine):
-    """Verify bulk generation for all 250 active personnel creates 250 A4 printable pages."""
+    """Verify bulk generation for all 254 active personnel creates 254 A4 printable pages."""
     res = get_bulk_slips(department="all", status="active")
     assert res.status_code == 200
     html = res.body.decode("utf-8")
 
-    # Exactly 250 A4 pages
-    assert html.count('<div class="slip-page">') == 250
-    assert "Toplam 250 Personel Sayfası" in html
-    assert "Toplu Personel Puantaj Fişleri (250 Kişi)" in html
+    # Exactly 254 A4 pages
+    assert html.count('<div class="slip-page">') == 254
+    assert "Toplam 254 Personel Sayfası" in html
+    assert "Toplu Personel Puantaj Fişleri (254 Kişi)" in html
 
 
 def test_bulk_slips_rendering_department_filter(engine):

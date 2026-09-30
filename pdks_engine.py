@@ -228,6 +228,7 @@ def resolve_pdks_columns(sh) -> Dict[str, Optional[int]]:
         "g_saat": find_col(["girissaati", "gsaat", "girissaat", "bassaat"], 9 if is_legacy_29 else 4),
         "c_tarih": find_col(["cikistarihi", "ctarih", "cikistarih", "bittarih"], 10 if is_legacy_29 else 5),
         "c_saat": find_col(["cikissaati", "csaat", "cikissaat", "bitsaat"], 11 if is_legacy_29 else 6),
+        "sure": find_col(["sure", "calismasuresi", "toplamsure"]),
         "puantaj_tarih": find_col(["puantajtarihi", "ptarih", "puantajtarih"], 18 if sh.ncols > 18 else None),
     }
 
@@ -473,9 +474,9 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             break_hours = 0.5
 
     # -------------------------------------------------------------------------
-    # 3. AKŞAM VARDİYASI (16:00 - 19:59 Giriş)
+    # 3. AKŞAM VARDİYASI (15:30 - 18:29 Giriş / Standart 16:00 - 24:00)
     # -------------------------------------------------------------------------
-    elif 16 * 60 <= g_min <= 19 * 60 + 59:
+    elif 15 * 60 + 30 <= g_min < 18 * 60 + 30:
         shift_end = 24 * 60
         if g_min <= 16 * 60 + 20:
             effective_start = 16 * 60
@@ -491,7 +492,7 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
         if c_min < shift_end:
             elapsed_h = (c_min - effective_start) / 60.0
             if elapsed_h <= 4.0:
-                net = elapsed_h
+                net = max(0.0, elapsed_h)
                 break_hours = 0.0
             else:
                 net = max(0.0, elapsed_h - 0.5)
@@ -503,21 +504,93 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
         break_hours = 0.5
 
     # -------------------------------------------------------------------------
-    # 4. GECE VARDİYASI (20:00 - 05:59 Giriş)
+    # 4. ARA GECE VARDİYASI (18:30 - 19:29 Giriş / Standart 19:00 - 03:00 / 07:00)
     # -------------------------------------------------------------------------
-    else:
-        shift_end = 32 * 60 if g_min >= 20 * 60 else 8 * 60
-        effective_start = 24 * 60 if g_min >= 20 * 60 else 0
+    elif 18 * 60 + 30 <= g_min < 19 * 60 + 30:
+        shift_end = 27 * 60  # 03:00 (7.5 saat net temel vardiya)
+        if g_min <= 19 * 60 + 20:
+            effective_start = 19 * 60
+            base_hours = 7.5
+        else:
+            diff = g_min - (19 * 60 + 20)
+            cuts = (diff - 1) // 30 + 1
+            effective_start = 19 * 60 + cuts * 30
+            base_hours = max(0.0, 7.5 - cuts * 0.5)
+            
         effective_g = fmt_hm(effective_start)
-        base_hours = 7.5
         
         if c_min < shift_end:
-            raw_w = (c_min - effective_start) / 60.0
-            if raw_w <= 4.0:
-                net = raw_w
+            elapsed_h = (c_min - effective_start) / 60.0
+            if elapsed_h <= 4.0:
+                net = max(0.0, elapsed_h)
                 break_hours = 0.0
             else:
-                net = max(0.0, raw_w - 0.5)
+                net = max(0.0, elapsed_h - 0.5)
+                break_hours = 0.5
+            final_h = round(net * 2) / 2.0
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
+            
+        ot_min = c_min - shift_end
+        break_hours = 0.5
+
+    # -------------------------------------------------------------------------
+    # 5. GECE / 12 SAATLİK VARDİYA (19:30 - 22:29 Giriş / Standart 20:00 - 04:00 / 08:00)
+    # -------------------------------------------------------------------------
+    elif 19 * 60 + 30 <= g_min < 22 * 60 + 30:
+        if g_min <= 20 * 60 + 20:
+            effective_start = 20 * 60
+            base_hours = 7.5
+        else:
+            diff = g_min - (20 * 60 + 20)
+            cuts = (diff - 1) // 30 + 1
+            effective_start = 20 * 60 + cuts * 30
+            base_hours = max(0.0, 7.5 - cuts * 0.5)
+            
+        shift_end = effective_start + 8 * 60  # 20:00 için 04:00 (28:00)
+        effective_g = fmt_hm(effective_start)
+        
+        if c_min < shift_end:
+            elapsed_h = (c_min - effective_start) / 60.0
+            if elapsed_h <= 4.0:
+                net = max(0.0, elapsed_h)
+                break_hours = 0.0
+            else:
+                net = max(0.0, elapsed_h - 0.5)
+                break_hours = 0.5
+            final_h = round(net * 2) / 2.0
+            return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
+            
+        ot_min = c_min - shift_end
+        break_hours = 0.5
+
+    # -------------------------------------------------------------------------
+    # 6. GECE VARDİYASI (22:30 - 05:59 Giriş / Standart 24:00 - 08:00)
+    # -------------------------------------------------------------------------
+    else:
+        if g_min >= 22 * 60 + 30:
+            effective_start = 24 * 60
+            base_hours = 7.5
+            shift_end = 32 * 60
+        elif g_min <= 20:
+            effective_start = 0
+            base_hours = 7.5
+            shift_end = 8 * 60
+        else:
+            diff = g_min - 20
+            cuts = (diff - 1) // 30 + 1
+            effective_start = cuts * 30
+            base_hours = max(0.0, 7.5 - cuts * 0.5)
+            shift_end = effective_start + 8 * 60
+            
+        effective_g = fmt_hm(effective_start)
+        
+        if c_min < shift_end:
+            elapsed_h = (c_min - effective_start) / 60.0
+            if elapsed_h <= 4.0:
+                net = max(0.0, elapsed_h)
+                break_hours = 0.0
+            else:
+                net = max(0.0, elapsed_h - 0.5)
                 break_hours = 0.5
             final_h = round(net * 2) / 2.0
             return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
@@ -556,6 +629,39 @@ def calc_factory_worked_hours(g_saat_str: str, c_saat_str: str, sure_str: str = 
     """Geriye dönük uyumluluk: (total_hours, overtime_hours) tuple'ı döndürür."""
     res = calculate_shift_hours(g_saat_str, c_saat_str)
     return res.total_hours, res.overtime_hours
+
+def repair_turnstile_anomalies(rows: List[Dict[str, str]]) -> Tuple[List[Dict[str, str]], bool, str]:
+    """
+    Turnike algoritmik denetimi:
+    1. Gündüz Vardiyası Ters Basım Onarımı: İşçi sabah turnikesine çıkış, akşam turnikesine giriş basmışsa
+       (Örn: g_saat 15:00-20:00 arası ve c_saat 06:00-10:00 arası), saatleri yer değiştirerek
+       gündüz vardiyasını (08:00 - 17:00 / 18:00) otomatik kurtarır.
+       (Not: Gece vardiyası girişleri 20:00-05:59 arası olup bu kapsama dahil edilmez).
+    2. Çift/Mükerrer Anlık Basım Ayıklama: Turnikeye peş peşe basılan mükerrer girişler veya çıkışlar ayıklanır.
+    """
+    if not rows:
+        return rows, False, ""
+
+    repaired = [dict(r) for r in rows]
+    was_repaired = False
+    notes = []
+
+    if len(repaired) == 1:
+        g = repaired[0].get("g_saat", "")
+        c = repaired[0].get("c_saat", "")
+        if g and c:
+            g_hm = parse_hm(g)
+            c_hm = parse_hm(c)
+            if g_hm and c_hm:
+                g_m = g_hm[0] * 60 + g_hm[1]
+                c_m = c_hm[0] * 60 + c_hm[1]
+                if (15 * 60 <= g_m <= 19 * 60 + 15) and (6 * 60 <= c_m <= 10 * 60):
+                    repaired[0]["g_saat"] = c
+                    repaired[0]["c_saat"] = g
+                    was_repaired = True
+                    notes.append(f"Turnike Ters Basımı Düzeltildi ({c[:5]} Giriş, {g[:5]} Çıkış)")
+
+    return repaired, was_repaired, "; ".join(notes)
 
 # =================================================================================================
 # 5. ANA MOTOR SINIFI (PDKSEngine)
@@ -859,6 +965,7 @@ class PDKSEngine:
             g_saat = get_val(r, "g_saat")
             c_tarih = get_val(r, "c_tarih")
             c_saat = get_val(r, "c_saat")
+            sure_val = get_val(r, "sure")
             p_tarih = get_val(r, "puantaj_tarih")
             target_date = p_tarih if p_tarih else (g_tarih if g_tarih else c_tarih)
             gun_adi = get_val(r, "gun_adi") or (get_day_name(target_date) if target_date else "")
@@ -893,18 +1000,112 @@ class PDKSEngine:
                 dt_g = parse_d_hm(g_tarih, g_saat)
                 dt_c = parse_d_hm(c_tarih, c_saat)
                 if dt_g and dt_c and (dt_c - dt_g).total_seconds() > 18 * 3600:
-                    self._add_punch_to_day(g_tarih, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, "")
+                    self._add_punch_to_day(g_tarih, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, "", sure_val)
                     c_gun_adi = get_day_name(c_tarih) if c_tarih else gun_adi
-                    self._add_punch_to_day(c_tarih, sira, sicil, kart, c_gun_adi, full_name, name_k, lokasyon, "", c_saat)
+                    self._add_punch_to_day(c_tarih, sira, sicil, kart, c_gun_adi, full_name, name_k, lokasyon, "", c_saat, "")
                     continue
 
             # Normal geçerli hareket
-            self._add_punch_to_day(target_date, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, c_saat)
+            self._add_punch_to_day(target_date, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, c_saat, sure_val)
+
+        # Gece vardiyasında akşam başlayıp ertesi gün sabah biten ve 2 güne bölünmüş hareketleri birleştir
+        self._stitch_cross_day_night_shifts()
 
         # Günlük hareketleri hesapla
         self._calculate_daily_results()
 
-    def _add_punch_to_day(self, date_str: str, sira: str, sicil: str, kart: str, gun_adi: str, full_name: str, name_k: str, lokasyon: str, g_saat: str, c_saat: str):
+    def _stitch_cross_day_night_shifts(self):
+        """
+        Gece vardiyasında akşam (örn: 18:30-23:59) başlayıp ertesi gün sabah (05:00-10:00)
+        biten ve PDKS turnikesi tarafından 2 ayrı güne bölünmüş hareketleri birleştirir.
+        Örnek:
+        - 11.09 20:13 giriş (çıkış yok, GECE_TEK_BASIM kalmış)
+        - 12.09 08:15 çıkış (giriş yok veya tek basım kalmış)
+        -> 11.09 için 20:13 Giriş - 08:15 Çıkış olarak bağlanır.
+        -> 12.09 sabahındaki bu çıkış basımı tüketilir ve hatalı tek basımdan kurtarılır.
+        """
+        for name_k in list(self.personnel_by_key.keys()):
+            for d in range(1, self.days_in_month):
+                k_curr = (name_k, d)
+                k_next = (name_k, d + 1)
+                
+                if k_curr not in self.raw_daily_punches or k_next not in self.raw_daily_punches:
+                    continue
+                
+                data_curr = self.raw_daily_punches[k_curr]
+                data_next = self.raw_daily_punches[k_next]
+                
+                rows_curr = data_curr["rows"]
+                rows_next = data_next["rows"]
+                
+                if not rows_curr or not rows_next:
+                    continue
+                
+                punches_curr = []
+                for r in rows_curr:
+                    if r.get("g_saat"): punches_curr.append(("g", r["g_saat"]))
+                    if r.get("c_saat"): punches_curr.append(("c", r["c_saat"]))
+                    
+                punches_next = []
+                for r in rows_next:
+                    if r.get("g_saat"): punches_next.append(("g", r["g_saat"]))
+                    if r.get("c_saat"): punches_next.append(("c", r["c_saat"]))
+                    
+                if not punches_curr or not punches_next:
+                    continue
+                    
+                last_p = punches_curr[-1]
+                t_curr = last_p[1][:5]
+                hm_curr = parse_hm(t_curr)
+                if not hm_curr:
+                    continue
+                tm_curr = hm_curr[0] * 60 + hm_curr[1]
+                
+                # Akşam veya gece girişiyle açık kalmış gün (18:30 sonrası tekil basım)
+                if tm_curr >= 18 * 60 + 30 and (len(punches_curr) % 2 == 1):
+                    first_p_next = punches_next[0]
+                    t_next = first_p_next[1][:5]
+                    hm_next = parse_hm(t_next)
+                    if not hm_next:
+                        continue
+                    tm_next = hm_next[0] * 60 + hm_next[1]
+                    
+                    # Ertesi gün sabah çıkışı (05:00 - 10:00)
+                    if 5 * 60 <= tm_next <= 10 * 60:
+                        # Ertesi günün bu sabah basımı sonrasında tam gündüz mesaisi (10:00 - 22:00 arası) var mı?
+                        has_daytime_shift = any(
+                            parse_hm(p[1][:5]) and (10 * 60 < parse_hm(p[1][:5])[0] * 60 + parse_hm(p[1][:5])[1] < 22 * 60)
+                            for p in punches_next
+                        )
+                        if not has_daytime_shift:
+                            if len(rows_curr) == 1:
+                                rows_curr[0] = {"g_saat": t_curr, "c_saat": t_next}
+                            else:
+                                for r in reversed(rows_curr):
+                                    if r.get("g_saat") == last_p[1] or r.get("c_saat") == last_p[1]:
+                                        r["g_saat"] = t_curr
+                                        r["c_saat"] = t_next
+                                        break
+                                        
+                            # Gün d+1'den sabah çıkış basımlarını tüket
+                            new_next_rows = []
+                            for r in rows_next:
+                                r_g = r.get("g_saat", "")
+                                r_c = r.get("c_saat", "")
+                                hm_g = parse_hm(r_g[:5]) if r_g else None
+                                hm_c = parse_hm(r_c[:5]) if r_c else None
+                                is_morning_g = hm_g and (hm_g[0] * 60 + hm_g[1] <= 10 * 60)
+                                is_morning_c = hm_c and (hm_c[0] * 60 + hm_c[1] <= 10 * 60)
+                                if is_morning_g and not r_c:
+                                    continue
+                                if is_morning_g and is_morning_c:
+                                    continue
+                                if is_morning_g and r_c:
+                                    r["g_saat"] = ""
+                                new_next_rows.append(r)
+                            data_next["rows"] = new_next_rows
+
+    def _add_punch_to_day(self, date_str: str, sira: str, sicil: str, kart: str, gun_adi: str, full_name: str, name_k: str, lokasyon: str, g_saat: str, c_saat: str, sure_val: str = ""):
         if not date_str or "." not in str(date_str):
             return
         parts = str(date_str).split(".")
@@ -922,7 +1123,7 @@ class PDKSEngine:
                 "sira": sira, "sicil": sicil, "kart": kart, "gun_adi": gun_adi,
                 "full_name": full_name, "lokasyon": lokasyon, "date_str": date_str, "day": d
             }
-        self.raw_daily_punches[k]["rows"].append({"g_saat": g_saat, "c_saat": c_saat})
+        self.raw_daily_punches[k]["rows"].append({"g_saat": g_saat, "c_saat": c_saat, "sure": sure_val})
 
     def _calculate_daily_results(self):
         """Toplanan hareketleri kural motoruna sokar ve tüm denetim izlerini üretir."""
@@ -960,10 +1161,23 @@ class PDKSEngine:
             if len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]:
                 g_raw = rows[0]["g_saat"]
                 c_raw = rows[0]["c_saat"]
+                excel_sure = rows[0].get("sure", "")
                 s_res = calculate_shift_hours(g_raw, c_raw)
                 tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
                 eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                 fiili_sure = tot_h
+                
+                if excel_sure:
+                    hm = parse_hm(excel_sure)
+                    if hm:
+                        excel_tot_h = hm[0] + hm[1] / 60.0
+                        if abs(excel_tot_h - tot_h) > 0.05:
+                            audit_note += f" [Hesaplanan Süre: {fmt_hours_tr(tot_h)}s | Excel Süre Sütunu: {excel_sure} -> Excel baz alındı.] "
+                            tot_h = excel_tot_h
+                            fiili_sure = tot_h
+                            ot_h = max(0.0, tot_h - 7.5)
+                            base_h = min(7.5, tot_h)
+                            
                 raw_g_str = g_raw[:5]
                 raw_c_str = c_raw[:5]
                 
@@ -981,6 +1195,22 @@ class PDKSEngine:
                     tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
                     eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                     fiili_sure = tot_h
+                    
+                    # Çoklu basımda, satırlardan birinde süre varsa toplayalım veya karşılaştıralım
+                    total_excel_sure = 0.0
+                    for r_sub in rows:
+                        sub_sure = r_sub.get("sure", "")
+                        if sub_sure:
+                            hm = parse_hm(sub_sure)
+                            if hm: total_excel_sure += hm[0] + hm[1] / 60.0
+                    
+                    if total_excel_sure > 0 and abs(total_excel_sure - tot_h) > 0.05:
+                        audit_note += f" [Hesaplanan Süre: {fmt_hours_tr(tot_h)}s | Excel Çoklu Süre Toplamı: {fmt_hours_tr(total_excel_sure)}s -> Excel baz alındı.] "
+                        tot_h = total_excel_sure
+                        fiili_sure = tot_h
+                        ot_h = max(0.0, tot_h - 7.5)
+                        base_h = min(7.5, tot_h)
+                        
                     if len(all_punches) > 2:
                         status_type = "ÇOKLU_BASIM_MIN_MAX"
                         is_exception = True

@@ -650,6 +650,20 @@ USERS: Dict[str, Dict[str, Any]] = {
         "can_edit_rules": False,
         "can_export_reports": True
     },
+    "saha_amiri": {
+        "username": "saha_amiri",
+        "password": "123",
+        "name": "Murat Çelik",
+        "title": "Vardiya & Saha Amiri",
+        "role": "supervisor",
+        "avatar": "👷",
+        "allowed_tabs": ["tab-overview", "tab-exceptions", "tab-saha"],
+        "can_resolve_exceptions": True,
+        "can_view_finance": False,
+        "can_view_compliance": True,
+        "can_edit_rules": False,
+        "can_export_reports": False
+    },
     "admin": {
         "username": "admin",
         "password": "admin",
@@ -721,6 +735,13 @@ class BulkExceptionResolveRequest(BaseModel):
     action_type: Optional[str] = "custom"  # "smart", "standard_7_5", "custom"
     global_note: Optional[str] = None
     resolved_by: Optional[str] = "Vardiya Amiri / Toplu Onay"
+
+class SahaQuickResolveRequest(BaseModel):
+    name_key: str
+    day: int
+    approved_hours: float = Field(..., ge=0.0, le=24.0, description="Onaylanan saat (0-24)")
+    note: Optional[str] = "Saha El Terminali Hızlı Onayı"
+    resolved_by: Optional[str] = "Saha Vardiya Amiri"
 
 class RuleUpdateRequest(BaseModel):
     rules: Dict[str, Any]
@@ -2271,6 +2292,477 @@ def get_audit_print_html_endpoint(
 
     data = db.get_audit_logs(search=search_val, action_type=action_val, username=user_val, page=1, page_size=1000)
     html_content = generate_audit_print_html(data)
+    return HTMLResponse(content=html_content, status_code=200)
+
+# -----------------------------------------------------------------------------
+# 10. SAHA EL TERMİNALİ, HAT YÖNETİMİ VE QR PUANTAJ SERVİSLERİ
+# -----------------------------------------------------------------------------
+@app.get("/saha")
+def serve_saha():
+    """Vardiya Amiri Saha El Terminali / Mobil Hızlı Onay Arayüzü"""
+    saha_file = os.path.join(STATIC_DIR, "saha.html")
+    if os.path.exists(saha_file):
+        return FileResponse(saha_file)
+    return HTMLResponse("<h1>FİDE Konserve - Saha El Terminali Modu</h1><p>Arayüz hazırlanıyor...</p>")
+
+@app.get("/api/saha/dept-summary")
+def get_saha_dept_summary(
+    dept: Optional[str] = Query("TÜMÜ"),
+    day: Optional[int] = Query(None),
+    request: Request = None
+):
+    if hasattr(dept, 'default'): dept = dept.default
+    if hasattr(day, 'default'): day = day.default
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    resolved_dict = mgr.resolved_exceptions
+
+    all_depts = sorted(list({p.get("bolum", "").strip() for p in eng.personnel_list if p.get("bolum", "").strip()}))
+    depts_list = ["TÜMÜ"] + all_depts
+
+    target_day = day
+    if target_day is None or target_day < 1 or target_day > 31:
+        target_day = 4  # Gerçek veride hareketli standart gün
+
+    selected_dept = dept.strip() if dept else "TÜMÜ"
+
+    if selected_dept != "TÜMÜ":
+        dept_personnel = [p for p in eng.personnel_list if p.get("bolum", "").strip().upper() == selected_dept.upper()]
+    else:
+        dept_personnel = eng.personnel_list
+
+    total_workers = len(dept_personnel)
+    present_count = 0
+    absent_count = 0
+    attention_list = []
+    resolved_today_count = 0
+
+    for p in dept_personnel:
+        name_k = p["name_key"]
+        ad_soyad = p["ad_soyad"]
+        rec = eng.daily_results.get((name_k, target_day))
+
+        k1 = f"{ad_soyad}:{target_day}"
+        k2 = f"{name_k}:{target_day}"
+        is_resolved = (k1 in resolved_dict) or (k2 in resolved_dict)
+        res_info = resolved_dict.get(k1) or resolved_dict.get(k2) or {}
+        if is_resolved:
+            resolved_today_count += 1
+
+        if rec:
+            fiili_sure = rec.get("fiili_sure", 0.0)
+            final_h = rec.get("final_hours", 0.0)
+            status_t = rec.get("status_type", "NORMAL")
+            is_exc = rec.get("is_exception", False)
+            audit_n = rec.get("audit_note", "")
+            g_s = rec.get("raw_g_str", "-")
+            c_s = rec.get("raw_c_str", "-")
+
+            if final_h > 0 or fiili_sure > 0:
+                present_count += 1
+            else:
+                absent_count += 1
+
+            if is_exc or "TEK_BASIM" in status_t or "ÇIKIŞ_YOK" in status_t or "GİRİŞ_YOK" in status_t or "ÇOKLU" in status_t or is_resolved:
+                matching_exc = next((e for e in eng.exception_records if (e.get("name_key") == name_k or e.get("ad_soyad") == ad_soyad) and e.get("gun") == target_day), None)
+                if matching_exc and matching_exc.get("smart_suggestion"):
+                    sug = matching_exc["smart_suggestion"]
+                else:
+                    sug = eng.predict_smart_suggestion({
+                        "name_key": name_k,
+                        "ad_soyad": ad_soyad,
+                        "gun": target_day,
+                        "bolum": p.get("bolum", ""),
+                        "status_type": status_t
+                    })
+
+                attention_list.append({
+                    "name_key": name_k,
+                    "ad_soyad": ad_soyad,
+                    "tc": p.get("tc", ""),
+                    "kart": p.get("kart", ""),
+                    "bolum": p.get("bolum", ""),
+                    "g_saat": g_s,
+                    "c_saat": c_s,
+                    "fiili_sure": fiili_sure,
+                    "final_hours": final_h,
+                    "status_type": status_t,
+                    "audit_note": audit_n,
+                    "is_resolved": is_resolved,
+                    "resolution": res_info,
+                    "smart_suggestion": sug
+                })
+        else:
+            absent_count += 1
+
+    return {
+        "departments": depts_list,
+        "selected_dept": selected_dept,
+        "selected_day": target_day,
+        "kpis": {
+            "total_workers": total_workers,
+            "present_count": present_count,
+            "absent_count": absent_count,
+            "attention_count": len(attention_list),
+            "resolved_today_count": resolved_today_count
+        },
+        "attention_list": attention_list
+    }
+
+@app.post("/api/saha/quick-resolve")
+def saha_quick_resolve_endpoint(payload: SahaQuickResolveRequest, request: Request = None):
+    """Saha amirinin el terminalinden tek dokunuşla personelin mesaisini onaylaması."""
+    user = get_current_user_from_request(request)
+    if not user.get("can_resolve_exceptions", False):
+        raise HTTPException(status_code=403, detail="Saha onayı verme yetkiniz bulunmamaktadır.")
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+
+    person = next((p for p in eng.personnel_list if p["name_key"] == payload.name_key), None)
+    target_name = person["ad_soyad"] if person else payload.name_key
+    target_tc = person.get("tc", "") if person else ""
+    target_dept = person.get("bolum", "") if person else ""
+
+    old_rec = eng.daily_results.get((payload.name_key, payload.day))
+    old_val = f"{old_rec['final_hours']}s" if old_rec else "0.0s"
+    new_val = f"{payload.approved_hours}s"
+
+    try:
+        saved = mgr.resolve_exception(
+            name_key=payload.name_key,
+            day=payload.day,
+            approved_hours=payload.approved_hours,
+            note=payload.note or "Saha El Terminali Hızlı Onayı",
+            resolved_by=payload.resolved_by or user.get("name") or "Saha Vardiya Amiri"
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    db = DatabaseManager()
+    db.log_action(
+        username=user.get("username", "saha_amiri"),
+        user_name=user.get("name", "Saha Amiri"),
+        user_role=user.get("role", "supervisor"),
+        action_type="SAHA_HIZLI_ONAY",
+        target_tc=target_tc,
+        target_name=target_name,
+        target_dept=target_dept,
+        day=payload.day,
+        old_value=old_val,
+        new_value=new_val,
+        reason=payload.note or "Saha El Terminali Hızlı Onayı",
+        ip_address=get_client_ip(request),
+        metadata={"name_key": payload.name_key, "approved_hours": payload.approved_hours, "day": payload.day}
+    )
+
+    return {
+        "status": "success",
+        "message": f"{target_name} Gün {payload.day} için {payload.approved_hours}s saha amirince onaylandı.",
+        "data": saved
+    }
+
+@app.get("/api/saha/qr-lookup/{tc_or_code}")
+def saha_qr_lookup(tc_or_code: str, request: Request = None):
+    """
+    El terminalinden tclerinin kayitli oldugu QR code okutulunca
+    o ayki puantaj bilgilerini dondurur.
+    """
+    clean_code = str(tc_or_code).strip()
+    if not clean_code:
+        raise HTTPException(status_code=400, detail="Geçersiz QR / Barkod verisi.")
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+
+    person = None
+    for p in eng.personnel_list:
+        p_tc = str(p.get("tc", "")).strip()
+        p_kart = str(p.get("kart", "")).strip()
+        p_sicil = str(p.get("sicil", "")).strip()
+        p_namek = str(p.get("name_key", "")).strip()
+
+        if (p_tc and (clean_code == p_tc or clean_code == p_tc.lstrip("0"))) or \
+           (p_kart and clean_code == p_kart) or \
+           (p_sicil and clean_code == p_sicil) or \
+           (p_namek and clean_code.upper() == p_namek.upper()):
+            person = p
+            break
+
+    if not person:
+        raise HTTPException(status_code=404, detail=f"'{clean_code}' koduna ait personel bulunamadı.")
+
+    name_k = person["name_key"]
+    matrix = eng.get_summary_matrix()
+    summary = next((m for m in matrix if m["name_key"] == name_k), {})
+
+    all_days = []
+    for d in range(1, 31):
+        rec = eng.daily_results.get((name_k, d))
+        k1 = f"{person['ad_soyad']}:{d}"
+        k2 = f"{name_k}:{d}"
+        is_res = (k1 in mgr.resolved_exceptions) or (k2 in mgr.resolved_exceptions)
+        res_info = mgr.resolved_exceptions.get(k1) or mgr.resolved_exceptions.get(k2) or {}
+
+        if rec:
+            all_days.append({
+                "day": d,
+                "date_str": rec.get("date_str", f"{d}.{eng.target_month:02d}.{eng.target_year}"),
+                "gun_adi": rec.get("gun_adi", ""),
+                "g_saat": rec.get("raw_g_str", "-"),
+                "c_saat": rec.get("raw_c_str", "-"),
+                "fiili_sure": rec.get("fiili_sure", 0.0),
+                "final_hours": rec.get("final_hours", 0.0),
+                "ot_hours": rec.get("overtime_hours", 0.0),
+                "bonus_hours": rec.get("bonus_hours", 0.0),
+                "status_type": rec.get("status_type", "NORMAL"),
+                "is_exception": rec.get("is_exception", False),
+                "audit_note": rec.get("audit_note", ""),
+                "is_resolved": is_res,
+                "resolution": res_info
+            })
+        else:
+            all_days.append({
+                "day": d,
+                "date_str": f"{d}.{eng.target_month:02d}.{eng.target_year}",
+                "gun_adi": "Pazar" if d in eng.sundays else "",
+                "g_saat": "-",
+                "c_saat": "-",
+                "fiili_sure": 0.0,
+                "final_hours": 0.0,
+                "ot_hours": 0.0,
+                "bonus_hours": 0.0,
+                "status_type": "TATİL" if d in eng.sundays else "GELMEDİ",
+                "is_exception": False,
+                "audit_note": "",
+                "is_resolved": False,
+                "resolution": {}
+            })
+
+    worked_days = [d for d in all_days if d["final_hours"] > 0 or d["g_saat"] != "-"]
+    recent_punches = worked_days[-7:] if len(worked_days) >= 7 else worked_days
+
+    latest_punch = worked_days[-1] if worked_days else None
+    today_status = {
+        "has_punch": latest_punch is not None,
+        "day": latest_punch["day"] if latest_punch else 0,
+        "date_str": latest_punch["date_str"] if latest_punch else "",
+        "g_saat": latest_punch["g_saat"] if latest_punch else "-",
+        "c_saat": latest_punch["c_saat"] if latest_punch else "-",
+        "final_hours": latest_punch["final_hours"] if latest_punch else 0.0,
+        "state": "İÇERİDE (ÇALIŞIYOR)" if latest_punch and latest_punch["g_saat"] != "-" and latest_punch["c_saat"] == "-" else ("ÇIKIŞ YAPTI" if latest_punch and latest_punch["c_saat"] != "-" else "GELMEDİ")
+    }
+
+    return {
+        "personnel": {
+            "name_key": name_k,
+            "ad_soyad": person["ad_soyad"],
+            "tc": person.get("tc", ""),
+            "kart": person.get("kart", ""),
+            "sicil": person.get("sicil", ""),
+            "bolum": person.get("bolum", ""),
+            "durumu": person.get("durumu", "MEVSİMLİK"),
+            "mesai_durumu": person.get("mesai_durumu", "ALIR")
+        },
+        "period": f"{MONTH_NAMES_TR.get(eng.target_month, eng.target_month)} {eng.target_year}",
+        "kpis": {
+            "total_work_days": summary.get("total_work_days", 0),
+            "total_normal_hours": summary.get("total_normal_hours", 0.0),
+            "total_overtime_hours": summary.get("total_overtime_hours", 0.0),
+            "total_bonus_hours": summary.get("total_bonus_hours", 0.0),
+            "total_hours": summary.get("total_hours", 0.0),
+            "missing_days_count": summary.get("missing_days_count", 0),
+            "izin_days_count": summary.get("izin_days_count", 0),
+            "rapor_days_count": summary.get("rapor_days_count", 0)
+        },
+        "today_status": today_status,
+        "recent_punches": recent_punches,
+        "all_days": all_days
+    }
+
+@app.get("/api/saha/qr-cards", response_class=HTMLResponse)
+def get_saha_qr_cards(
+    dept: Optional[str] = Query(None),
+    limit: Optional[int] = Query(24),
+    request: Request = None
+):
+    """
+    Saha amirleri ve el terminali barkod/QR okuma testi için
+    A4 yazdırılabilir Personel Kimlik & QR Kart Sayfası üretir.
+    """
+    if hasattr(dept, 'default'): dept = dept.default
+    if hasattr(limit, 'default'): limit = limit.default
+
+    import qrcode
+    import qrcode.image.svg
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+
+    personnel = eng.personnel_list
+    if dept and dept != "TÜMÜ":
+        personnel = [p for p in personnel if p.get("bolum", "").strip().upper() == dept.strip().upper()]
+
+    if limit and limit > 0:
+        personnel = personnel[:limit]
+
+    cards_html = []
+    for p in personnel:
+        tc = str(p.get("tc", "")).strip() or "00000000000"
+        name = clean_display_text(p.get("ad_soyad", ""))
+        bolum = p.get("bolum", "GENEL")
+        kart = p.get("kart", "-")
+        sicil = p.get("sicil", "-")
+
+        qr_img = qrcode.make(tc, image_factory=qrcode.image.svg.SvgPathImage)
+        qr_svg = qr_img.to_string().decode("utf-8")
+        if "<?xml" in qr_svg:
+            qr_svg = qr_svg[qr_svg.find("<svg"):]
+
+        cards_html.append(f"""
+        <div class="qr-card">
+            <div class="card-brand">
+                <span class="factory-name">FİDE KONSERVE</span>
+                <span class="badge-type">PERSONEL KİMLİK KARTI</span>
+            </div>
+            <div class="card-body">
+                <div class="qr-box">
+                    {qr_svg}
+                </div>
+                <div class="person-details">
+                    <div class="p-name">{name}</div>
+                    <div class="p-dept">{bolum}</div>
+                    <div class="p-info-row"><span>T.C. No:</span> <strong>{tc}</strong></div>
+                    <div class="p-info-row"><span>Sicil:</span> <strong>{sicil}</strong></div>
+                    <div class="p-info-row"><span>Kart No:</span> <strong>{kart}</strong></div>
+                </div>
+            </div>
+            <div class="card-footer">
+                <span>El Terminali QR Kod Okutma</span>
+                <span class="dot">●</span>
+                <span>Puantaj & Saha Denetimi</span>
+            </div>
+        </div>
+        """)
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Personel Kimlik & QR Kartları — FİDE Konserve</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: #f1f5f9;
+            color: #0f172a;
+            padding: 24px;
+        }}
+        .print-toolbar {{
+            max-width: 1100px;
+            margin: 0 auto 20px auto;
+            background: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .print-btn {{
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .cards-grid {{
+            max-width: 1100px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }}
+        .qr-card {{
+            background: white;
+            border: 2px solid #cbd5e1;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            page-break-inside: avoid;
+        }}
+        .card-brand {{
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            color: white;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .factory-name {{ font-weight: 800; font-size: 13px; letter-spacing: 0.5px; color: #38bdf8; }}
+        .badge-type {{ font-size: 10px; font-weight: 600; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 12px; }}
+        .card-body {{
+            display: flex;
+            padding: 14px 16px;
+            gap: 16px;
+            align-items: center;
+        }}
+        .qr-box {{
+            width: 105px;
+            height: 105px;
+            flex-shrink: 0;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .qr-box svg {{ width: 100%; height: 100%; }}
+        .person-details {{ flex: 1; min-width: 0; }}
+        .p-name {{ font-size: 15px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+        .p-dept {{ font-size: 12px; font-weight: 600; color: #0284c7; margin-bottom: 8px; }}
+        .p-info-row {{ font-size: 11px; color: #64748b; margin-bottom: 3px; display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 2px; }}
+        .p-info-row strong {{ color: #1e293b; font-family: monospace; font-size: 12px; }}
+        .card-footer {{
+            background: #f8fafc;
+            padding: 6px 16px;
+            font-size: 10px;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-top: 1px solid #e2e8f0;
+        }}
+        .dot {{ color: #cbd5e1; }}
+        @media print {{
+            body {{ background: white; padding: 0; }}
+            .print-toolbar {{ display: none; }}
+            .cards-grid {{ grid-template-columns: repeat(2, 1fr); gap: 12px; }}
+            .qr-card {{ border: 1.5px solid #94a3b8; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="print-toolbar">
+        <div>
+            <h2 style="font-size: 18px; font-weight: 700;">🏭 Personel Kimlik & El Terminali QR Kod Kartları</h2>
+            <p style="font-size: 12px; color: #64748b; margin-top: 2px;">Toplam {len(personnel)} personelin el terminaliyle taranabilir TC kimlik QR kartları.</p>
+        </div>
+        <div>
+            <button class="print-btn" onclick="window.print()">🖨️ Sayfayı Yazdır (A4)</button>
+        </div>
+    </div>
+    <div class="cards-grid">
+        {"".join(cards_html)}
+    </div>
+</body>
+</html>"""
     return HTMLResponse(content=html_content, status_code=200)
 
 # -----------------------------------------------------------------------------

@@ -49,8 +49,8 @@ def exporter(engine):
 
 
 def test_erp_exporter_initialization(exporter):
-    """ERP Exporter 250 aktif personeli doğru tespit etmelidir."""
-    assert len(exporter.active_personnel) == 250
+    """ERP Exporter 254 aktif personeli doğru tespit etmelidir."""
+    assert len(exporter.active_personnel) == 254
     assert exporter.month == 9
     assert exporter.year == 2026
     assert exporter.days_in_month == 30
@@ -58,7 +58,7 @@ def test_erp_exporter_initialization(exporter):
 
 
 def test_logo_xml_generation(exporter):
-    """Logo Tiger XML çıktısı geçerli XML olmalı ve 250 personel puantaj kaydı içermelidir."""
+    """Logo Tiger XML çıktısı geçerli XML olmalı ve 254 personel puantaj kaydı içermelidir."""
     xml_bytes = exporter.generate_logo_xml()
     assert isinstance(xml_bytes, bytes)
     assert len(xml_bytes) > 50000  # En az 50KB olmalıdır
@@ -71,7 +71,7 @@ def test_logo_xml_generation(exporter):
     assert "FIDE" in root.attrib.get("FIRMA", "")
 
     personnel_nodes = root.findall("SATIRLAR/PERSONEL")
-    assert len(personnel_nodes) == 250
+    assert len(personnel_nodes) == 254
 
     # İlk personeli kontrol et
     p0 = personnel_nodes[0]
@@ -88,7 +88,7 @@ def test_logo_xml_generation(exporter):
 
 
 def test_luca_excel_generation(exporter):
-    """TÜRMOB Luca Bordro Excel dosyası standart kolonlar ve 250 satır içermelidir."""
+    """TÜRMOB Luca Bordro Excel dosyası standart kolonlar ve 254 satır içermelidir."""
     excel_bytes = exporter.generate_luca_excel()
     assert isinstance(excel_bytes, bytes)
     assert len(excel_bytes) > 20000
@@ -108,9 +108,9 @@ def test_luca_excel_generation(exporter):
     assert "H.İçi Mesai (1.5x)" in headers
     assert "Eksik Nedeni" in headers
 
-    # Veri satırları (Satır 3 ile 252 arası, 250 aktif personel)
+    # Veri satırları (Satır 3 ile 252 arası, 254 aktif personel)
     data_rows = [r for r in ws.iter_rows(min_row=3, max_row=252, values_only=True) if r[1] is not None]
-    assert len(data_rows) == 250
+    assert len(data_rows) == 254
 
     # TC Kimlik No string formatı kontrolü
     tc_val = str(ws.cell(row=3, column=1).value)
@@ -119,7 +119,7 @@ def test_luca_excel_generation(exporter):
 
 
 def test_mikro_excel_generation(exporter):
-    """Mikro Fly/Jump Excel aktarım şablonu 250 personel ve mesai kolonları içermelidir."""
+    """Mikro Fly/Jump Excel aktarım şablonu 254 personel ve mesai kolonları içermelidir."""
     excel_bytes = exporter.generate_mikro_excel()
     assert isinstance(excel_bytes, bytes)
     assert len(excel_bytes) > 20000
@@ -136,11 +136,11 @@ def test_mikro_excel_generation(exporter):
     assert "İcra Kesintisi (TL)" in headers
 
     data_rows = [r for r in ws.iter_rows(min_row=3, max_row=252, values_only=True) if r[0] is not None]
-    assert len(data_rows) == 250
+    assert len(data_rows) == 254
 
 
 def test_zirve_excel_generation(exporter):
-    """Zirve Müşavir/Bordro Excel dosyası icra ve prim kolonlarıyla 250 satır içermelidir."""
+    """Zirve Müşavir/Bordro Excel dosyası icra ve prim kolonlarıyla 254 satır içermelidir."""
     excel_bytes = exporter.generate_zirve_excel()
     assert isinstance(excel_bytes, bytes)
     assert len(excel_bytes) > 20000
@@ -156,7 +156,7 @@ def test_zirve_excel_generation(exporter):
     assert "Net Ücret (TL)" in headers
 
     data_rows = [r for r in ws.iter_rows(min_row=3, max_row=252, values_only=True) if r[0] is not None]
-    assert len(data_rows) == 250
+    assert len(data_rows) == 254
 
 
 def test_universal_csv_generation(exporter):
@@ -168,7 +168,7 @@ def test_universal_csv_generation(exporter):
 
     text = csv_bytes.decode("utf-8")
     lines = [line.strip() for line in text.split("\r\n") if line.strip()]
-    assert len(lines) == 251  # 1 Başlık + 250 Personel
+    assert len(lines) == 251  # 1 Başlık + 254 Personel
 
     # Noktalı virgül ayırıcı kontrolü
     header = lines[0]
@@ -208,7 +208,7 @@ def test_erp_api_endpoints():
     # 1. Format Listesi
     formats_res = get_erp_formats(req_acc)
     assert formats_res["status"] == "success"
-    assert formats_res["active_personnel_count"] == 250
+    assert formats_res["active_personnel_count"] == 254
     format_ids = [f["id"] for f in formats_res["formats"]]
     assert "logo" in format_ids
     assert "luca" in format_ids

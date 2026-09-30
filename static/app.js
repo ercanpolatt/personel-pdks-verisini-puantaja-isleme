@@ -434,13 +434,20 @@ function populateDeptDropdowns(departments) {
 
   const currentVal = select.value;
   let options = '<option value="all">Tüm Bölümler (Hepsi)</option>';
+  let datalistOptions = '';
 
   Object.keys(departments).sort().forEach(dept => {
     options += `<option value="${dept}">${dept}</option>`;
+    datalistOptions += `<option value="${dept}"></option>`;
   });
 
   select.innerHTML = options;
   if (currentVal) select.value = currentVal;
+  
+  const datalist = document.getElementById('deptDatalist');
+  if (datalist) {
+    datalist.innerHTML = datalistOptions;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -1014,20 +1021,29 @@ async function loadBonuses() {
 
     document.getElementById('valBonusTotalHours').innerHTML = `${fmtHours(data.total_bonus_hours)} <small>saat</small>`;
 
-    // Balık Dolum/Kesim vs Üretim toplamları
-    let fishHours = 0;
-    let prodHours = 0;
-    Object.entries(data.dept_summary || {}).forEach(([dept, s]) => {
-      const dUpper = dept.toUpperCase();
-      if (dUpper.includes('BALIK')) fishHours += s.total_hours;
-      else if (dUpper.includes('URETIM') || dUpper.includes('ÜRETİM')) prodHours += s.total_hours;
+    // Balık Dolum/Kesim vs Üretim toplamları yerine, genel departman dağılımlarını kullan
+    let uniquePersons = new Set();
+    data.items.forEach(item => {
+      uniquePersons.add(item.ad_soyad);
     });
 
-    const valFish = document.getElementById('valFishBonus');
-    if (valFish) valFish.innerHTML = `${fmtHours(fishHours)} <small>saat</small>`;
+    const valPersonCount = document.getElementById('valBonusPersonCount');
+    if (valPersonCount) valPersonCount.innerText = uniquePersons.size.toString();
 
-    const valProd = document.getElementById('valProdBonus');
-    if (valProd) valProd.innerHTML = `${fmtHours(prodHours)} <small>saat</small>`;
+    let topDept = '-';
+    let topHours = 0;
+    Object.entries(data.dept_summary || {}).forEach(([dept, s]) => {
+      if (s.total_hours > topHours) {
+        topHours = s.total_hours;
+        topDept = dept;
+      }
+    });
+
+    const valTopDept = document.getElementById('valTopBonusDept');
+    if (valTopDept) valTopDept.innerText = topDept;
+    
+    const subTopHours = document.getElementById('subTopBonusDeptHours');
+    if (subTopHours) subTopHours.innerText = `${fmtHours(topHours)} Saat`;
 
     renderBonusesTable(data.items);
 
@@ -1573,21 +1589,70 @@ async function loadRules() {
     if (document.getElementById('ruleLunchBreak')) document.getElementById('ruleLunchBreak').value = dayShift.lunch_break_hours || 1.5;
     if (document.getElementById('ruleOtGrace')) document.getElementById('ruleOtGrace').value = otPolicy.grace_period_minutes || 25;
 
-    // Balık Dolum/Kesim
-    const fish = bonuses.BALIK_DOLUM_KESIM || {};
-    if (document.getElementById('ruleFishBonus')) document.getElementById('ruleFishBonus').value = fish.bonus_hours || 2.0;
-    if (document.getElementById('ruleFishThreshold')) document.getElementById('ruleFishThreshold').value = fish.min_hours_threshold !== undefined ? fish.min_hours_threshold : 0.0;
-
-    // Üretim
-    const prod = bonuses.URETIM || {};
-    if (document.getElementById('ruleProdBonus')) document.getElementById('ruleProdBonus').value = prod.bonus_hours || 4.0;
-    if (document.getElementById('ruleProdThreshold')) document.getElementById('ruleProdThreshold').value = prod.min_hours_threshold || 12.0;
+    renderDynamicBonuses();
 
   } catch (err) {
     console.error(err);
     showToast('Kurallar yüklenirken hata: ' + err.message, 'error');
   }
 }
+
+function renderDynamicBonuses() {
+  const container = document.getElementById('dynamicBonusesContainer');
+  if (!container) return;
+  const bonuses = AppState.rules?.department_bonuses || {};
+  let html = '';
+  for (const [key, bInfo] of Object.entries(bonuses)) {
+    const hours = bInfo.bonus_hours || 0;
+    const kw = (bInfo.match_keywords && bInfo.match_keywords.length > 0) ? bInfo.match_keywords[0] : key;
+    html += `
+      <div class="rule-box" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <strong>Bölüm: ${kw}</strong>
+          <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Eklenen Bonus: ${hours} Saat</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline" style="color: var(--color-danger); border-color: var(--color-danger);" onclick="removeBonusRule('${key}')">Sil</button>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+window.addBonusRule = function() {
+  const deptInput = document.getElementById('newBonusDept');
+  const hoursInput = document.getElementById('newBonusHours');
+  if (!deptInput || !hoursInput) return;
+  
+  const kw = deptInput.value.trim().toUpperCase();
+  const hours = parseFloat(hoursInput.value);
+  if (!kw || isNaN(hours)) {
+    showToast('Bölüm adı ve bonus saati geçerli olmalıdır.', 'warning');
+    return;
+  }
+  
+  if (!AppState.rules) AppState.rules = {};
+  if (!AppState.rules.department_bonuses) AppState.rules.department_bonuses = {};
+  
+  const key = kw.replace(/[^A-Z0-9]/g, '_');
+  AppState.rules.department_bonuses[key] = {
+    name: `${kw} Primi`,
+    match_keywords: [kw],
+    min_hours_threshold: 0.0,
+    bonus_hours: hours,
+    description: `${kw} Primi: +${hours} saat`
+  };
+  
+  deptInput.value = '';
+  hoursInput.value = '';
+  renderDynamicBonuses();
+};
+
+window.removeBonusRule = function(key) {
+  if (AppState.rules && AppState.rules.department_bonuses && AppState.rules.department_bonuses[key]) {
+    delete AppState.rules.department_bonuses[key];
+    renderDynamicBonuses();
+  }
+};
 
 async function saveRulesFromForm(e) {
   e.preventDefault();
@@ -1609,16 +1674,6 @@ async function saveRulesFromForm(e) {
     updated.day_shift.standard_hours = parseFloat(document.getElementById('ruleDayHours').value) || 7.5;
     updated.day_shift.lunch_break_hours = parseFloat(document.getElementById('ruleLunchBreak').value) || 1.5;
     updated.overtime_policy.grace_period_minutes = parseInt(document.getElementById('ruleOtGrace').value) || 25;
-
-    // Balık
-    if (!updated.department_bonuses.BALIK_DOLUM_KESIM) updated.department_bonuses.BALIK_DOLUM_KESIM = {};
-    updated.department_bonuses.BALIK_DOLUM_KESIM.bonus_hours = parseFloat(document.getElementById('ruleFishBonus').value) || 2.0;
-    updated.department_bonuses.BALIK_DOLUM_KESIM.min_hours_threshold = parseFloat(document.getElementById('ruleFishThreshold').value) || 0.0;
-
-    // Üretim
-    if (!updated.department_bonuses.URETIM) updated.department_bonuses.URETIM = {};
-    updated.department_bonuses.URETIM.bonus_hours = parseFloat(document.getElementById('ruleProdBonus').value) || 4.0;
-    updated.department_bonuses.URETIM.min_hours_threshold = parseFloat(document.getElementById('ruleProdThreshold').value) || 12.0;
 
     const res = await fetch('/api/rules', {
       method: 'POST',

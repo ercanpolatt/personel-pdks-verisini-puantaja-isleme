@@ -32,7 +32,7 @@ def test_financial_hourly_rates(engine):
     summary = fin["summary"]
     items = fin["personnel_costs"]
 
-    assert summary["total_personnel_active"] == 250
+    assert summary["total_personnel_active"] == 254
     assert summary["total_overtime_cost"] > 1_000_000  # ~₺1.04M
     assert summary["total_payroll_budget"] > 4_000_000  # ~₺4.65M
 

@@ -40,26 +40,19 @@ DEFAULT_RULES = {
         "standard_hours": 7.5,
         "break_hours": 0.5
     },
+    "night_shift_20": {
+        "start_time": "20:00",
+        "tolerance_time": "20:20",
+        "standard_end_time": "04:00",
+        "standard_hours": 7.5,
+        "break_hours": 0.5,
+        "description": "20:00 - 08:00 Gece / 12 Saatlik Vardiya (04:00 sonrası fazla mesai)"
+    },
     "overtime_policy": {
         "grace_period_minutes": 25,
         "step_hours": 0.5
     },
-    "department_bonuses": {
-        "BALIK_DOLUM_KESIM": {
-            "name": "Balık Dolum ve Kesim Primi",
-            "match_keywords": ["BALIK DOLUM", "BALIK KESIM", "BALIK KES"],
-            "min_hours_threshold": 0.0,
-            "bonus_hours": 2.0,
-            "description": "Balık Dolum ve Kesim Primi: Çalışılan her güne saat fark etmeksizin +2.0 saat eklenir (Örn: 8s -> 10s, 9s -> 11s)"
-        },
-        "URETIM": {
-            "name": "Üretim Primi",
-            "match_keywords": ["URETIM", "URETIM ELEMANI", "KONSERVE URETIM"],
-            "min_hours_threshold": 12.0,
-            "bonus_hours": 4.0,
-            "description": "Üretim Primi: 12.0 saat ve üzeri çalışmalara +4.0 saat eklenir"
-        }
-    },
+    "department_bonuses": {},
     "missing_punch_policy": {
         "morning_cutoff": "12:30",
         "evening_cutoff": "20:00",

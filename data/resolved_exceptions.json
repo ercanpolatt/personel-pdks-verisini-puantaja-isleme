@@ -13,7 +13,7 @@
     "approved_hours": 9.0,
     "note": "Test Audit Loglama",
     "resolved_by": "Ayşe Yılmaz",
-    "timestamp": "27.09.2026 12:31"
+    "timestamp": "30.09.2026 12:49"
   },
   "ABDULLAHKAYA:4": {
     "name_key": "ABDULLAHKAYA",
@@ -21,7 +21,7 @@
     "approved_hours": 7.5,
     "note": "Otomatik Toplu Onay Denetim Testi",
     "resolved_by": "Vardiya Amiri / Toplu Onay",
-    "timestamp": "27.09.2026 12:31"
+    "timestamp": "30.09.2026 12:49"
   },
   "ADALETKALAYCI:4": {
     "name_key": "ADALETKALAYCI",
@@ -29,6 +29,22 @@
     "approved_hours": 7.5,
     "note": "Otomatik Toplu Onay Denetim Testi",
     "resolved_by": "Vardiya Amiri / Toplu Onay",
-    "timestamp": "27.09.2026 12:31"
+    "timestamp": "30.09.2026 12:49"
+  },
+  "SEZGINIRGOREN:4": {
+    "name_key": "SEZGINIRGOREN",
+    "day": 4,
+    "approved_hours": 7.5,
+    "note": "Akıllı Öneri Onayı",
+    "resolved_by": "Saha Vardiya Amiri",
+    "timestamp": "27.09.2026 13:27"
+  },
+  "ADVIYEYARICI:30": {
+    "name_key": "ADVIYEYARICI",
+    "day": 30,
+    "approved_hours": 7.5,
+    "note": "⚡ Akıllı Öneri Kabul Edildi: Personelin bu aydaki 2 günlük normal vardiya alışkanlığı (17:04) baz alındı.",
+    "resolved_by": "Vardiya Amiri / Akıllı Onay",
+    "timestamp": "30.09.2026 20:55"
   }
 }

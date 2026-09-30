@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Saha El Terminali & Hat Masası — FİDE Konserve</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📱</text></svg>">
+    <style>
+        :root {
+            --bg-primary: #0b1329;
+            --bg-surface: #131e3d;
+            --bg-card: #1a2850;
+            --bg-card-hover: #223468;
+            --border-color: #2a3e75;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #0284c7;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --accent-purple: #8b5cf6;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Üst Bar (Header) */
+        header {
+            background: rgba(19, 30, 61, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-icon {
+            font-size: 24px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 10px;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            box-shadow: 0 4px 10px rgba(2, 132, 199, 0.3);
+        }
+
+        .brand-title {
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: #ffffff;
+            line-height: 1.1;
+        }
+
+        .brand-subtitle {
+            font-size: 11px;
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-pill {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-pill:hover, .btn-pill:active {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--accent-cyan);
+        }
+
+        /* Sekme / Mod Seçici (Hat Masası vs QR Okut) */
+        .tab-switcher {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: var(--bg-surface);
+            padding: 6px;
+            margin: 12px 16px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            gap: 6px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 12px 8px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue), #1e40af);
+            color: white;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+        }
+
+        /* Ana İçerik Alanı */
+        main {
+            flex: 1;
+            padding: 0 16px 80px 16px;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .view-section {
+            display: none;
+        }
+
+        .view-section.active {
+            display: block;
+        }
+
+        /* Hat Masası Filtreleri */
+        .filter-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            margin-bottom: 14px;
+            display: grid;
+            grid-template-columns: 2fr 1.2fr;
+            gap: 10px;
+        }
+
+        .filter-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .filter-select {
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 600;
+            outline: none;
+        }
+
+        .filter-select:focus {
+            border-color: var(--accent-cyan);
+        }
+
+        /* KPI İstatistik Kartları */
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .kpi-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 10px 8px;
+            text-align: center;
+        }
+
+        .kpi-val {
+            font-size: 18px;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .kpi-lbl {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-top: 2px;
+            text-transform: uppercase;
+        }
+
+        .kpi-card.kpi-green .kpi-val { color: var(--accent-green); }
+        .kpi-card.kpi-amber .kpi-val { color: var(--accent-amber); }
+        .kpi-card.kpi-rose .kpi-val { color: var(--accent-rose); }
+        .kpi-card.kpi-blue .kpi-val { color: var(--accent-cyan); }
+
+        /* Dikkat / Onay Kartları */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .worker-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            margin-bottom: 12px;
+            transition: transform 0.15s, border-color 0.2s;
+        }
+
+        .worker-card.resolved {
+            border-color: rgba(16, 185, 129, 0.4);
+            background: rgba(19, 30, 61, 0.6);
+        }
+
+        .card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .worker-name {
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .worker-dept {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            margin-top: 2px;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .badge-warning { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+        .badge-danger { background: rgba(244, 63, 94, 0.18); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.35); }
+        .badge-success { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.35); }
+        .badge-info { background: rgba(2, 132, 199, 0.18); color: #7dd3fc; border: 1px solid rgba(2, 132, 199, 0.35); }
+
+        .punch-meta {
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .punch-meta strong {
+            color: white;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .suggestion-box {
+            background: rgba(2, 132, 199, 0.1);
+            border-left: 3px solid var(--accent-cyan);
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #bae6fd;
+            margin-bottom: 12px;
+        }
+
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }
+
+        .action-btn {
+            border: none;
+            padding: 10px 6px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            transition: all 0.15s;
+        }
+
+        .btn-full {
+            background: #0284c7;
+            color: white;
+        }
+        .btn-full:active { background: #0369a1; transform: scale(0.98); }
+
+        .btn-smart {
+            background: #10b981;
+            color: white;
+        }
+        .btn-smart:active { background: #059669; transform: scale(0.98); }
+
+        .btn-absent {
+            background: #475569;
+            color: #e2e8f0;
+        }
+        .btn-absent:active { background: #334155; transform: scale(0.98); }
+
+        .btn-custom {
+            grid-column: span 3;
+            background: var(--bg-card);
+            border: 1px dashed var(--border-color);
+            color: var(--text-secondary);
+            padding: 8px;
+            margin-top: 4px;
+        }
+        .btn-custom:active { background: var(--bg-card-hover); }
+
+        /* QR OKUTMA EKRANI */
+        .scanner-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .scanner-viewfinder {
+            position: relative;
+            width: 100%;
+            max-width: 320px;
+            height: 260px;
+            margin: 0 auto 16px auto;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            background: #000000;
+            border: 2px solid var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .scanner-viewfinder video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .laser-line {
+            position: absolute;
+            top: 20%;
+            left: 5%;
+            right: 5%;
+            height: 2px;
+            background: #ef4444;
+            box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444;
+            animation: laserScan 2s infinite alternate ease-in-out;
+            pointer-events: none;
+        }
+
+        @keyframes laserScan {
+            0% { top: 15%; opacity: 0.8; }
+            100% { top: 85%; opacity: 0.9; }
+        }
+
+        .terminal-wedge-box {
+            background: var(--bg-card);
+            border: 2px solid var(--accent-blue);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            margin-top: 14px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            font-size: 16px;
+            font-family: monospace;
+            outline: none;
+            font-weight: 700;
+        }
+
+        .btn-scan-query {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: var(--radius-sm);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* PERSONEL PUANTAJ MODALI / SONUÇ KARTI */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(5, 10, 24, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal-sheet {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 20px 18px;
+            box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.25s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
+        .modal-drag-bar {
+            width: 48px;
+            height: 4px;
+            background: var(--border-color);
+            border-radius: 2px;
+            margin: 0 auto 16px auto;
+        }
+
+        .worker-profile-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .profile-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #0284c7, #6366f1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            color: white;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+        }
+
+        .profile-info h3 {
+            font-size: 18px;
+            font-weight: 800;
+            color: white;
+        }
+
+        .profile-info p {
+            font-size: 13px;
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .monthly-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .stat-box {
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            padding: 10px 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-val {
+            font-size: 17px;
+            font-weight: 800;
+            color: white;
+        }
+
+        .stat-lbl {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .today-live-badge {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .today-live-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: #6ee7b7;
+        }
+
+        .today-live-val {
+            font-size: 13px;
+            font-weight: 800;
+            color: white;
+            font-family: monospace;
+        }
+
+        /* 7 Günlük Tablo */
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+
+        .history-table th {
+            text-align: left;
+            padding: 8px 6px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .history-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid rgba(42, 62, 117, 0.5);
+            color: var(--text-secondary);
+        }
+
+        .history-table td strong {
+            color: white;
+            font-family: monospace;
+        }
+
+        .btn-modal-close {
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 12px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        /* Toast Bildirim */
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: #10b981;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-weight: 700;
+            font-size: 14px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            z-index: 200;
+            transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .toast.error {
+            background: #ef4444;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Üst Bar -->
+    <header>
+        <div class="brand">
+            <div class="brand-icon">📱</div>
+            <div>
+                <div class="brand-title">FİDE KONSERVE</div>
+                <div class="brand-subtitle">Saha El Terminali & Hat Masası</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <a href="/api/saha/qr-cards" target="_blank" class="btn-pill" title="Yazdırılabilir Personel QR Kartları">
+                <span>🖨️ QR Kartlar</span>
+            </a>
+            <a href="/" class="btn-pill" title="Masaüstü Puantaj Yönetim Portalı">
+                <span>💻 Masaüstü</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Mod Değiştirici (Sekmeler) -->
+    <div class="tab-switcher">
+        <button id="btnTabHat" class="tab-btn active" onclick="switchView('hat')">
+            <span>📋 Hat Masası</span>
+        </button>
+        <button id="btnTabQR" class="tab-btn" onclick="switchView('qr')">
+            <span>📷 QR Kod Okut</span>
+        </button>
+    </div>
+
+    <!-- Toast Bildirim -->
+    <div id="toast" class="toast">
+        <span id="toastIcon">✅</span>
+        <span id="toastMsg">İşlem başarıyla tamamlandı.</span>
+    </div>
+
+    <main>
+        <!-- =================================================================== -->
+        <!-- GÖRÜNÜM 1: HAT MASASI (Amir Hızlı Onay & Vardiya Listesi) -->
+        <!-- =================================================================== -->
+        <section id="viewHat" class="view-section active">
+            <!-- Filtre Paneli -->
+            <div class="filter-panel">
+                <div class="filter-group">
+                    <label for="selDept">Üretim Hattı / Bölüm</label>
+                    <select id="selDept" class="filter-select" onchange="loadDeptSummary()">
+                        <option value="TÜMÜ">TÜM BÖLÜMLER</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="selDay">İncelenen Gün</label>
+                    <select id="selDay" class="filter-select" onchange="loadDeptSummary()">
+                        <!-- 1-30 Günler JS ile dolacak -->
+                    </select>
+                </div>
+            </div>
+
+            <!-- Canlı Hat KPI Göstergeleri -->
+            <div class="kpi-row">
+                <div class="kpi-card kpi-blue">
+                    <div id="kpiTotal" class="kpi-val">0</div>
+                    <div class="kpi-lbl">Toplam İşçi</div>
+                </div>
+                <div class="kpi-card kpi-green">
+                    <div id="kpiPresent" class="kpi-val">0</div>
+                    <div class="kpi-lbl">İçeride</div>
+                </div>
+                <div class="kpi-card kpi-rose">
+                    <div id="kpiAbsent" class="kpi-val">0</div>
+                    <div class="kpi-lbl">Devamsız</div>
+                </div>
+                <div class="kpi-card kpi-amber">
+                    <div id="kpiAttention" class="kpi-val">0</div>
+                    <div class="kpi-lbl">Dikkat / Tek</div>
+                </div>
+            </div>
+
+            <!-- Dikkat Gerektiren Personeller Başlığı -->
+            <div class="section-header">
+                <div class="section-title">
+                    <span>⚡ Onay Bekleyen Personeller</span>
+                    <span id="lblCountBadge" style="font-size: 11px; background: rgba(245,158,11,0.2); color: #f59e0b; padding: 2px 8px; border-radius: 10px;">0 Kayıt</span>
+                </div>
+                <button class="btn-pill" onclick="loadDeptSummary()" style="padding: 4px 8px; font-size: 11px;">🔄 Yenile</button>
+            </div>
+
+            <!-- Personel Kartları Listesi -->
+            <div id="attentionCardsContainer">
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    Yükleniyor...
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- GÖRÜNÜM 2: PERSONEL QR KOD OKUTUCU (El Terminali / Kamera) -->
+        <!-- =================================================================== -->
+        <section id="viewQR" class="view-section">
+            <div class="scanner-card">
+                <h3 style="font-size: 17px; font-weight: 800; margin-bottom: 6px;">📷 Personel QR / Barkod Okut</h3>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+                    El terminali donanım okuyucusunu kullanın veya kamerayı kart üzerindeki QR koda tutun.
+                </p>
+
+                <!-- Kamera Önizleme -->
+                <div class="scanner-viewfinder">
+                    <video id="scannerVideo" playsinline autoplay muted></video>
+                    <div class="laser-line"></div>
+                </div>
+
+                <div style="display: flex; justify-content: center; gap: 8px; margin-bottom: 14px;">
+                    <button id="btnCameraToggle" class="btn-pill" onclick="toggleCamera()">
+                        <span>📷 Kamerayı Aç / Kapat</span>
+                    </button>
+                </div>
+
+                <!-- El Terminali Doğrudan Barkod / TC Giriş Kutusu (Donanım okuyucu klavye girişi olarak basar) -->
+                <div class="terminal-wedge-box">
+                    <input id="hwScannerInput" type="text" class="terminal-input" placeholder="Barkod / TC Okutun veya Yazın..." autofocus>
+                    <button class="btn-scan-query" onclick="handleManualQuery()">Sorgula</button>
+                </div>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">
+                    ℹ️ Zebra / Honeywell terminallerinin tetiğine bastığınızda TC numarası bu alana otomatik dolar ve sorgulanır.
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- PERSONEL AYLIK PUANTAJ DETAY MODALI (QR Okutulunca Açılır) -->
+    <!-- =================================================================== -->
+    <div id="workerModal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+        <div class="modal-sheet">
+            <div class="modal-drag-bar"></div>
+
+            <div class="worker-profile-header">
+                <div class="profile-avatar" id="mAvatar">👷</div>
+                <div class="profile-info">
+                    <h3 id="mName">MEHMET YILMAZ</h3>
+                    <p id="mDept">BALIK KESİM BÖLÜMÜ</p>
+                    <span id="mTC" style="font-size: 11px; color: var(--text-muted); font-family: monospace;">TC: 12345678901</span>
+                </div>
+            </div>
+
+            <!-- Canlı Turnike Durumu -->
+            <div class="today-live-badge">
+                <div>
+                    <div class="today-live-title">BUGÜNKÜ TURNİKE DURUMU</div>
+                    <div id="mTodayPunches" style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Giriş: 08:00 | Çıkış: -</div>
+                </div>
+                <div id="mTodayState" class="status-badge badge-success">İÇERİDE</div>
+            </div>
+
+            <!-- Aylık Kümulatif İstatistikler -->
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">
+                📊 <span id="mPeriodTitle">Eylül 2026</span> Aylık Puantaj Karnesi
+            </div>
+            <div class="monthly-stats-grid">
+                <div class="stat-box">
+                    <div id="mStatDays" class="stat-val">24</div>
+                    <div class="stat-lbl">Çalışılan Gün</div>
+                </div>
+                <div class="stat-box">
+                    <div id="mStatNormalH" class="stat-val">180s</div>
+                    <div class="stat-lbl">Normal Mesai</div>
+                </div>
+                <div class="stat-box">
+                    <div id="mStatOtH" class="stat-val" style="color: #f59e0b;">32.5s</div>
+                    <div class="stat-lbl">1.5x Fazla Mesai</div>
+                </div>
+                <div class="stat-box">
+                    <div id="mStatBonusH" class="stat-val" style="color: #06b6d4;">16.0s</div>
+                    <div class="stat-lbl">Bölüm Primi</div>
+                </div>
+                <div class="stat-box">
+                    <div id="mStatTotalH" class="stat-val" style="color: #10b981;">228.5s</div>
+                    <div class="stat-lbl">Toplam Saat</div>
+                </div>
+                <div class="stat-box">
+                    <div id="mStatMissing" class="stat-val" style="color: #ef4444;">1 Gün</div>
+                    <div class="stat-lbl">Devamsızlık</div>
+                </div>
+            </div>
+
+            <!-- Son Hareketler Tablosu -->
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">
+                ⏱️ Son Günlük Turnike Hareketleri
+            </div>
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Tarih</th>
+                        <th>Giriş</th>
+                        <th>Çıkış</th>
+                        <th>Saat</th>
+                        <th>Durum</th>
+                    </tr>
+                </thead>
+                <tbody id="mHistoryTableBody">
+                    <!-- JS ile dolacak -->
+                </tbody>
+            </table>
+
+            <button class="btn-modal-close" onclick="closeModal()">Pencereyi Kapat</button>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- ÖZEL SAAT GİRİŞ MODALI (Manuel Amir Onayı) -->
+    <!-- =================================================================== -->
+    <div id="customHourModal" class="modal-overlay" onclick="closeCustomHourModal(event)">
+        <div class="modal-sheet" style="max-width: 420px;">
+            <div class="modal-drag-bar"></div>
+            <h3 style="font-size: 16px; font-weight: 800; margin-bottom: 4px;">✏️ Özel Çalışma Saati Onayı</h3>
+            <p id="cModalSubtitle" style="font-size: 12px; color: var(--accent-cyan); margin-bottom: 14px;">Personel Adı - Gün 4</p>
+
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Onaylanan Süre (Saat)</label>
+                <input id="cInputHours" type="number" step="0.5" min="0" max="24" value="7.5" style="width: 100%; background: var(--bg-card); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius-sm); font-size: 18px; font-weight: 800; margin-top: 4px;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Amir Notu / Gerekçe</label>
+                <input id="cInputNote" type="text" placeholder="Örn: Balık temizleme hattında fazla mesai yaptı" value="Saha El Terminali Özel Onayı" style="width: 100%; background: var(--bg-card); border: 1px solid var(--border-color); color: white; padding: 10px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 4px;">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <button class="btn-pill" style="justify-content: center; padding: 12px;" onclick="closeCustomHourModalDirect()">İptal</button>
+                <button class="btn-scan-query" style="padding: 12px;" onclick="submitCustomHour()">Kaydet & Onayla</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logic Script -->
+    <script>
+        // State
+        let currentDept = "TÜMÜ";
+        let currentDay = 4;
+        let cameraStream = null;
+        let isScanning = false;
+        let selectedCustomItem = null;
+
+        // Web Audio API ile tatlı onay/tarama sesi
+        function playBeep(freq = 880, duration = 0.12) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            } catch (e) {
+                // Sessiz fallback
+            }
+        }
+
+        function showToast(msg, isError = false) {
+            const t = document.getElementById("toast");
+            const icon = document.getElementById("toastIcon");
+            const text = document.getElementById("toastMsg");
+            icon.textContent = isError ? "⚠️" : "✅";
+            text.textContent = msg;
+            t.className = isError ? "toast show error" : "toast show";
+            setTimeout(() => {
+                t.className = "toast";
+            }, 3000);
+        }
+
+        // Sekme Değiştirici
+        function switchView(view) {
+            document.getElementById("btnTabHat").classList.toggle("active", view === "hat");
+            document.getElementById("btnTabQR").classList.toggle("active", view === "qr");
+            document.getElementById("viewHat").classList.toggle("active", view === "hat");
+            document.getElementById("viewQR").classList.toggle("active", view === "qr");
+
+            if (view === "qr") {
+                setTimeout(() => {
+                    const input = document.getElementById("hwScannerInput");
+                    input.focus();
+                }, 200);
+            } else {
+                stopCamera();
+            }
+        }
+
+        // Günleri Doldur (1-30)
+        function initDays() {
+            const sel = document.getElementById("selDay");
+            sel.innerHTML = "";
+            for (let d = 1; d <= 30; d++) {
+                const opt = document.createElement("option");
+                opt.value = d;
+                opt.textContent = `${d} Eylül 2026`;
+                if (d === 4) opt.selected = true;
+                sel.appendChild(opt);
+            }
+        }
+
+        // Hat Masası Verilerini Yükle
+        async function loadDeptSummary() {
+            const dept = document.getElementById("selDept").value;
+            const day = document.getElementById("selDay").value;
+            currentDept = dept;
+            currentDay = parseInt(day, 10);
+
+            try {
+                const res = await fetch(`/api/saha/dept-summary?dept=${encodeURIComponent(dept)}&day=${day}`);
+                if (!res.ok) throw new Error("Veri alınamadı");
+                const data = await res.json();
+
+                // Bölüm listesini güncelle (ilk açılışta)
+                const selDept = document.getElementById("selDept");
+                if (selDept.options.length <= 1 && data.departments) {
+                    selDept.innerHTML = "";
+                    data.departments.forEach(d => {
+                        const opt = document.createElement("option");
+                        opt.value = d;
+                        opt.textContent = d;
+                        if (d === data.selected_dept) opt.selected = true;
+                        selDept.appendChild(opt);
+                    });
+                }
+
+                // KPI güncelle
+                document.getElementById("kpiTotal").textContent = data.kpis.total_workers;
+                document.getElementById("kpiPresent").textContent = data.kpis.present_count;
+                document.getElementById("kpiAbsent").textContent = data.kpis.absent_count;
+                document.getElementById("kpiAttention").textContent = data.kpis.attention_count;
+                document.getElementById("lblCountBadge").textContent = `${data.attention_list.length} Kayıt`;
+
+                renderAttentionCards(data.attention_list);
+            } catch (err) {
+                console.error(err);
+                document.getElementById("attentionCardsContainer").innerHTML = `
+                    <div style="text-align: center; padding: 30px; color: var(--accent-rose);">
+                        Veriler yüklenirken hata oluştu: ${err.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Onay Bekleyen Kartları Ekrana Bas
+        function renderAttentionCards(items) {
+            const container = document.getElementById("attentionCardsContainer");
+            if (!items || items.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+                        <div style="font-size: 32px; margin-bottom: 8px;">🎉</div>
+                        <h4 style="font-size: 15px; font-weight: 700; color: white;">Harika! Bu hatta dikkat gerektiren kayıt yok.</h4>
+                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Tüm turnike basımları normal veya daha önce amirince onaylandı.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = items.map(item => {
+                const sug = item.smart_suggestion || { suggested_hours: 7.5, reason: "Standart fabrika mesaisi" };
+                const isResolved = item.is_resolved;
+                const statusBadgeClass = isResolved ? "badge-success" : (item.status_type.includes("YOK") ? "badge-warning" : "badge-info");
+                const statusLabel = isResolved ? `ONAYLANDI (${item.resolution.approved_hours}s)` : item.status_type;
+
+                return `
+                <div class="worker-card ${isResolved ? 'resolved' : ''}">
+                    <div class="card-top">
+                        <div>
+                            <div class="worker-name">${item.ad_soyad}</div>
+                            <div class="worker-dept">${item.bolum || 'GENEL'}</div>
+                        </div>
+                        <span class="status-badge ${statusBadgeClass}">${statusLabel}</span>
+                    </div>
+
+                    <div class="punch-meta">
+                        <div>Giriş: <strong>${item.g_saat}</strong></div>
+                        <div>Çıkış: <strong>${item.c_saat}</strong></div>
+                        <div>Fiili: <strong>${item.fiili_sure}s</strong></div>
+                    </div>
+
+                    ${!isResolved ? `
+                    <div class="suggestion-box">
+                        🤖 <strong>Akıllı Öneri:</strong> ${sug.suggested_hours}s (${sug.reason})
+                    </div>
+
+                    <div class="action-grid">
+                        <button class="action-btn btn-full" onclick="quickResolve('${item.name_key}', ${currentDay}, 7.5, 'Saha Tam Gün Onayı')">
+                            <span>⚡ Tam Gün</span>
+                            <span style="font-size: 10px; opacity: 0.85;">7.5 Saat</span>
+                        </button>
+                        <button class="action-btn btn-smart" onclick="quickResolve('${item.name_key}', ${currentDay}, ${sug.suggested_hours}, 'Akıllı Öneri Onayı')">
+                            <span>🤖 Öneri</span>
+                            <span style="font-size: 10px; opacity: 0.85;">${sug.suggested_hours}s Onayla</span>
+                        </button>
+                        <button class="action-btn btn-absent" onclick="quickResolve('${item.name_key}', ${currentDay}, 0.0, 'Gelmeyecek / Devamsız')">
+                            <span>❌ Gelmedi</span>
+                            <span style="font-size: 10px; opacity: 0.85;">0.0 Saat</span>
+                        </button>
+                        <button class="action-btn btn-custom" onclick="openCustomHourModal('${item.name_key}', '${item.ad_soyad}', ${currentDay}, ${sug.suggested_hours})">
+                            ✏️ Özel Saat ve Açıklama Gir...
+                        </button>
+                    </div>
+                    ` : `
+                    <div style="font-size: 11px; color: var(--accent-green); display: flex; justify-content: space-between; align-items: center; padding-top: 4px;">
+                        <span>✓ ${item.resolution.resolved_by || 'Vardiya Amiri'} tarafından ${item.resolution.approved_hours}s onaylandı.</span>
+                        <button class="btn-pill" style="padding: 2px 8px; font-size: 10px;" onclick="openCustomHourModal('${item.name_key}', '${item.ad_soyad}', ${currentDay}, ${item.resolution.approved_hours})">Değiştir</button>
+                    </div>
+                    `}
+                </div>
+                `;
+            }).join("");
+        }
+
+        // Hızlı Onay Gönder (Tek Dokunuş)
+        async function quickResolve(nameKey, day, hours, note) {
+            try {
+                const res = await fetch("/api/saha/quick-resolve", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name_key: nameKey,
+                        day: day,
+                        approved_hours: hours,
+                        note: note,
+                        resolved_by: "Saha Vardiya Amiri"
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Onay başarısız");
+                }
+
+                playBeep(980, 0.1);
+                showToast(`${hours}s onaylandı.`);
+                loadDeptSummary();
+            } catch (err) {
+                playBeep(350, 0.2);
+                showToast(err.message, true);
+            }
+        }
+
+        // Özel Saat Modalı
+        function openCustomHourModal(nameKey, adSoyad, day, defaultHours) {
+            selectedCustomItem = { nameKey, adSoyad, day };
+            document.getElementById("cModalSubtitle").textContent = `${adSoyad} — ${day} Eylül 2026`;
+            document.getElementById("cInputHours").value = defaultHours || 7.5;
+            document.getElementById("customHourModal").classList.add("open");
+        }
+
+        function closeCustomHourModal(e) {
+            if (e.target.id === "customHourModal") closeCustomHourModalDirect();
+        }
+
+        function closeCustomHourModalDirect() {
+            document.getElementById("customHourModal").classList.remove("open");
+            selectedCustomItem = null;
+        }
+
+        function submitCustomHour() {
+            if (!selectedCustomItem) return;
+            const hours = parseFloat(document.getElementById("cInputHours").value);
+            const note = document.getElementById("cInputNote").value;
+            if (isNaN(hours) || hours < 0 || hours > 24) {
+                showToast("Saat 0 ile 24 arasında olmalıdır!", true);
+                return;
+            }
+            quickResolve(selectedCustomItem.nameKey, selectedCustomItem.day, hours, note);
+            closeCustomHourModalDirect();
+        }
+
+        // ===================================================================
+        // QR BARKOD SORGULAMA & EL TERMİNALİ ENTEGRASYONU
+        // ===================================================================
+
+        // El terminali klavye dinleyicisi (Zebra / Honeywell tetiğe basılınca hızlı yazar ve Enter atar)
+        document.getElementById("hwScannerInput").addEventListener("keydown", function(e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                handleManualQuery();
+            }
+        });
+
+        // Sayfa genelinde de hızlı barkod dinle
+        let barcodeBuffer = "";
+        let lastKeyTime = Date.now();
+        window.addEventListener("keydown", function(e) {
+            // Eğer modal veya custom modal açıksa engelleme
+            if (document.getElementById("workerModal").classList.contains("open")) return;
+            if (document.getElementById("customHourModal").classList.contains("open")) return;
+
+            const now = Date.now();
+            if (now - lastKeyTime > 150) barcodeBuffer = "";
+            lastKeyTime = now;
+
+            if (e.key === "Enter") {
+                if (barcodeBuffer.length >= 5) {
+                    performQRLookup(barcodeBuffer);
+                    barcodeBuffer = "";
+                }
+            } else if (e.key.length === 1) {
+                barcodeBuffer += e.key;
+            }
+        });
+
+        function handleManualQuery() {
+            const input = document.getElementById("hwScannerInput");
+            const val = input.value.trim();
+            if (!val) {
+                showToast("Lütfen bir TC veya kart numarası girin.", true);
+                return;
+            }
+            performQRLookup(val);
+        }
+
+        // Personel Bilgilerini Getir ve Modal Aç
+        async function performQRLookup(code) {
+            try {
+                const res = await fetch(`/api/saha/qr-lookup/${encodeURIComponent(code)}`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Personel bulunamadı");
+                }
+                const data = await res.json();
+                playBeep(1200, 0.15); // Başarılı tarama sesi
+                renderWorkerModal(data);
+            } catch (err) {
+                playBeep(320, 0.25); // Hata sesi
+                showToast(err.message, true);
+            }
+        }
+
+        function renderWorkerModal(data) {
+            const p = data.personnel;
+            const k = data.kpis;
+            const today = data.today_status;
+
+            document.getElementById("mName").textContent = p.ad_soyad;
+            document.getElementById("mDept").textContent = `${p.bolum || 'GENEL'} • ${p.durumu || 'MEVSİMLİK'}`;
+            document.getElementById("mTC").textContent = `T.C. Kimlik: ${p.tc} | Kart: ${p.kart || '-'}`;
+            document.getElementById("mPeriodTitle").textContent = data.period;
+
+            // Bugün turnike
+            document.getElementById("mTodayPunches").textContent = `Giriş: ${today.g_saat} | Çıkış: ${today.c_saat} | Süre: ${today.final_hours}s`;
+            const stateEl = document.getElementById("mTodayState");
+            stateEl.textContent = today.state;
+            stateEl.className = today.state.includes("İÇERİDE") ? "status-badge badge-success" : (today.state.includes("ÇIKIŞ") ? "status-badge badge-info" : "status-badge badge-danger");
+
+            // Kümülatif KPI'lar
+            document.getElementById("mStatDays").textContent = `${k.total_work_days} Gün`;
+            document.getElementById("mStatNormalH").textContent = `${k.total_normal_hours.toFixed(1)}s`;
+            document.getElementById("mStatOtH").textContent = `${k.total_overtime_hours.toFixed(1)}s`;
+            document.getElementById("mStatBonusH").textContent = `${k.total_bonus_hours.toFixed(1)}s`;
+            document.getElementById("mStatTotalH").textContent = `${k.total_hours.toFixed(1)}s`;
+            document.getElementById("mStatMissing").textContent = `${k.missing_days_count} Gün`;
+
+            // Hareket tablosu
+            const tbody = document.getElementById("mHistoryTableBody");
+            const punches = data.recent_punches || [];
+            if (punches.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:12px; color:var(--text-muted);">Henüz kayıt bulunmuyor.</td></tr>`;
+            } else {
+                tbody.innerHTML = punches.map(row => `
+                    <tr>
+                        <td><strong>${row.date_str}</strong></td>
+                        <td>${row.g_saat}</td>
+                        <td>${row.c_saat}</td>
+                        <td><strong>${row.final_hours}s</strong></td>
+                        <td><span class="status-badge ${row.final_hours > 0 ? 'badge-success' : 'badge-danger'}">${row.status_type}</span></td>
+                    </tr>
+                `).join("");
+            }
+
+            document.getElementById("workerModal").classList.add("open");
+        }
+
+        function closeModal() {
+            document.getElementById("workerModal").classList.remove("open");
+            // Tekrar okutma kutusuna odaklan
+            const input = document.getElementById("hwScannerInput");
+            input.value = "";
+            input.focus();
+        }
+
+        function closeModalOnOverlay(e) {
+            if (e.target.id === "workerModal") closeModal();
+        }
+
+        // ===================================================================
+        // KAMERA QR OKUYUCU (HTML5 BarcodeDetector API)
+        // ===================================================================
+        async function toggleCamera() {
+            if (isScanning) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        }
+
+        async function startCamera() {
+            try {
+                const video = document.getElementById("scannerVideo");
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                video.srcObject = cameraStream;
+                isScanning = true;
+                document.getElementById("btnCameraToggle").innerHTML = "<span>🛑 Kamerayı Kapat</span>";
+                scanFrame();
+            } catch (err) {
+                console.error("Kamera açılamadı:", err);
+                showToast("Kameraya erişilemedi: " + err.message, true);
+            }
+        }
+
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            isScanning = false;
+            document.getElementById("btnCameraToggle").innerHTML = "<span>📷 Kamerayı Aç</span>";
+        }
+
+        async function scanFrame() {
+            if (!isScanning) return;
+            const video = document.getElementById("scannerVideo");
+
+            if ('BarcodeDetector' in window) {
+                try {
+                    const detector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13'] });
+                    const barcodes = await detector.detect(video);
+                    if (barcodes.length > 0) {
+                        const rawVal = barcodes[0].rawValue;
+                        if (rawVal) {
+                            stopCamera();
+                            performQRLookup(rawVal);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    // Algılama hatası
+                }
+            }
+
+            if (isScanning) {
+                requestAnimationFrame(scanFrame);
+            }
+        }
+
+        // Başlangıç
+        window.addEventListener("DOMContentLoaded", () => {
+            initDays();
+            loadDeptSummary();
+        });
+    </script>
+</body>
+</html>

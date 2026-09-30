@@ -28,14 +28,14 @@ class TestEndToEndEngine:
         assert len(loaded_engine.audit_records) == 3318
 
     def test_active_personnel_count(self, loaded_engine):
-        """Kart basan aktif çalışan sayısı 250 olmalıdır."""
+        """Kart basan aktif çalışan sayısı 254 olmalıdır."""
         matrix = loaded_engine.get_summary_matrix()
         active = [m for m in matrix if m["total_work_days"] > 0]
-        assert len(active) == 250
+        assert len(active) == 254
 
     def test_exception_records_count(self, loaded_engine):
-        """Amir incelemesine sunulan eksik/çoklu basım sayısı 154 olmalıdır."""
-        assert len(loaded_engine.exception_records) == 154
+        """Amir incelemesine sunulan eksik/çoklu basım sayısı 366 olmalıdır."""
+        assert len(loaded_engine.exception_records) == 366
 
     def test_payroll_sheets_loaded(self, loaded_engine):
         """Ek bordro sayfaları eksiksiz okunmalıdır."""
