@@ -20,12 +20,37 @@ const AppState = {
     title: 'Sistem Yöneticisi (Admin)',
     role: 'admin',
     avatar: '🛡️',
-    allowed_tabs: ['tab-overview', 'tab-matrix', 'tab-exceptions', 'tab-bonuses', 'tab-finance', 'tab-compliance', 'tab-reports', 'tab-audit'],
+    allowed_tabs: ['tab-overview', 'tab-matrix', 'tab-exceptions', 'tab-bonuses', 'tab-finance', 'tab-compliance', 'tab-boss-attendance', 'tab-shuttle', 'tab-shift-planner', 'tab-reports', 'tab-audit'],
     can_resolve_exceptions: true,
     can_view_finance: true,
     can_view_compliance: true,
     can_edit_rules: true,
     can_export_reports: true
+  },
+
+  // Patron & Yönetim Masası (Günlük Bölüm Mevcudu)
+  bossAttendance: {
+    selectedDay: 1,
+    selectedDept: 'all',
+    search: '',
+    data: null,
+    modalWorkers: [],
+    modalSearch: ''
+  },
+
+  // Servis & Güzergah Radarı
+  shuttle: {
+    selectedDay: 1,
+    data: null,
+    modalRiders: [],
+    modalRouteName: ''
+  },
+
+  // Vardiya Çizelgesi ve Sapma Radarı
+  shiftPlanner: {
+    selectedDay: 1,
+    filter: 'ALL',
+    data: null
   },
   
   // Puantaj Matrisi Durumu
@@ -226,6 +251,9 @@ function switchTab(tabId) {
   if (tabId === 'tab-matrix') loadMatrix();
   if (tabId === 'tab-exceptions') loadExceptions();
   if (tabId === 'tab-bonuses') loadBonuses();
+  if (tabId === 'tab-boss-attendance') loadBossAttendance();
+  if (tabId === 'tab-shuttle') loadShuttleLogistics();
+  if (tabId === 'tab-shift-planner') loadShiftPlanner();
   if (tabId === 'tab-financial') {
     loadFinancialRadar();
     loadIcraRecords();
@@ -1587,7 +1615,7 @@ async function loadRules() {
     if (document.getElementById('ruleDayEnd')) document.getElementById('ruleDayEnd').value = dayShift.end_time || '17:00';
     if (document.getElementById('ruleDayHours')) document.getElementById('ruleDayHours').value = dayShift.standard_hours || 7.5;
     if (document.getElementById('ruleLunchBreak')) document.getElementById('ruleLunchBreak').value = dayShift.lunch_break_hours || 1.5;
-    if (document.getElementById('ruleOtGrace')) document.getElementById('ruleOtGrace').value = otPolicy.grace_period_minutes || 25;
+    if (document.getElementById('ruleOtGrace')) document.getElementById('ruleOtGrace').value = otPolicy.grace_period_minutes || 20;
 
     renderDynamicBonuses();
 
@@ -1673,7 +1701,7 @@ async function saveRulesFromForm(e) {
     updated.day_shift.end_time = document.getElementById('ruleDayEnd').value;
     updated.day_shift.standard_hours = parseFloat(document.getElementById('ruleDayHours').value) || 7.5;
     updated.day_shift.lunch_break_hours = parseFloat(document.getElementById('ruleLunchBreak').value) || 1.5;
-    updated.overtime_policy.grace_period_minutes = parseInt(document.getElementById('ruleOtGrace').value) || 25;
+    updated.overtime_policy.grace_period_minutes = parseInt(document.getElementById('ruleOtGrace').value) || 20;
 
     const res = await fetch('/api/rules', {
       method: 'POST',
@@ -2458,6 +2486,7 @@ async function switchRole(username, password = null) {
     if (AppState.activeTab === 'tab-matrix') loadMatrix();
     if (AppState.activeTab === 'tab-exceptions') loadExceptions();
     if (AppState.activeTab === 'tab-bonuses') loadBonuses();
+    if (AppState.activeTab === 'tab-boss-attendance') loadBossAttendance();
     if (AppState.activeTab === 'tab-finance') {
       loadFinancialRadar();
       loadIcraRecords();
@@ -3054,5 +3083,1063 @@ function renderAuditPagination(data) {
   if (btnPrev) btnPrev.disabled = (page <= 1);
   if (btnNext) btnNext.disabled = (page >= totalPages);
 }
+
+// ============================================================================
+// 12. PATRON & YÖNETİM ANALİTİK MASASI (GÜNLÜK BÖLÜM MEVCUDU)
+// ============================================================================
+async function loadBossAttendance() {
+  try {
+    const res = await fetch('/api/analytics/daily-department-attendance');
+    if (!res.ok) throw new Error('Günlük bölüm mevcudu verileri alınamadı');
+    const data = await res.json();
+    AppState.bossAttendance.data = data;
+
+    // 1. Rozet güncelle
+    const badgeDepts = document.getElementById('badgeBossDepts');
+    if (badgeDepts && data.all_departments) {
+      badgeDepts.innerText = `${data.all_departments.length} Bölüm`;
+    }
+
+    // 2. 4 Executive KPI'ları yaz
+    renderBossKPIs(data.kpis);
+
+    // 3. 30 Günlük Yatay Gün Şeridini oluştur
+    renderBossDayRibbon(data.days, data.sundays);
+
+    // 4. Seçilen günün departman kartlarını listele (varsayılan: gün 1 veya mevcut seçili gün)
+    const selectedDay = AppState.bossAttendance.selectedDay || 1;
+    renderBossDailyBreakdown(selectedDay);
+
+    // 5. 30 Günlük Tüm Bölümler Isı Haritası Matrisini çiz
+    renderBossHeatmapMatrix(data.department_matrix, data.days_in_month, data.sundays, data.daily_totals);
+
+    // 6. Trend grafiği için departman dropdown'ını doldur ve grafiği çiz
+    populateBossTrendDeptDropdown(data.all_departments);
+    renderBossTrendChart();
+
+  } catch (err) {
+    console.error('Boss attendance error:', err);
+    showToast('Günlük bölüm mevcudu yüklenemedi: ' + err.message, 'error');
+  }
+}
+
+function renderBossKPIs(kpis) {
+  if (!kpis) return;
+
+  const elAvg = document.getElementById('valBossAvgDaily');
+  if (elAvg) elAvg.innerHTML = `${kpis.avg_daily_working_day_workers || 0} <small>kişi/gün</small>`;
+
+  const elPeak = document.getElementById('valBossPeakDay');
+  const subPeak = document.getElementById('subBossPeakDay');
+  if (elPeak && kpis.peak_day) {
+    elPeak.innerHTML = `${kpis.peak_day.workers || 0} <small>kişi</small>`;
+    if (subPeak) subPeak.innerText = `${kpis.peak_day.date || ''} (${kpis.peak_day.day_name || ''})`;
+  }
+
+  const elBusy = document.getElementById('valBossBusiestDept');
+  const subBusy = document.getElementById('subBossBusiestDept');
+  if (elBusy && kpis.busiest_department) {
+    elBusy.innerText = kpis.busiest_department.department || '-';
+    if (subBusy) {
+      subBusy.innerText = `Zirve: ${kpis.busiest_department.peak_workers || 0} kişi | Toplam ${kpis.busiest_department.total_man_days || 0} adam-gün`;
+    }
+  }
+
+  const elSun = document.getElementById('valBossSundayAvg');
+  if (elSun) elSun.innerHTML = `${kpis.avg_sunday_workers || 0} <small>kişi/Pazar</small>`;
+}
+
+function renderBossDayRibbon(days, sundays) {
+  const container = document.getElementById('bossDayRibbonContainer');
+  if (!container || !days) return;
+
+  const activeDay = AppState.bossAttendance.selectedDay || 1;
+  let html = '';
+
+  days.forEach(d => {
+    const isSun = d.is_sunday;
+    const isAct = d.day === activeDay;
+    const dayPad = d.day.toString().padStart(2, '0');
+
+    html += `
+      <div class="day-chip ${isAct ? 'active' : ''} ${isSun ? 'is-sunday' : ''}" 
+           data-day="${d.day}" 
+           onclick="selectBossDay(${d.day})"
+           title="${d.date} ${d.day_name}: ${d.total_workers} Personel, ${d.total_hours}s Çalışma">
+        <span class="day-chip-num">${dayPad}</span>
+        <span class="day-chip-name">${d.day_name_short}</span>
+        <span class="day-chip-badge">${d.total_workers}</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function selectBossDay(dayNum) {
+  AppState.bossAttendance.selectedDay = dayNum;
+
+  // Çip sınıflarını güncelle
+  document.querySelectorAll('#bossDayRibbonContainer .day-chip').forEach(chip => {
+    const d = parseInt(chip.getAttribute('data-day'));
+    if (d === dayNum) {
+      chip.classList.add('active');
+      chip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    } else {
+      chip.classList.remove('active');
+    }
+  });
+
+  renderBossDailyBreakdown(dayNum);
+}
+
+function renderBossDailyBreakdown(dayNum) {
+  const data = AppState.bossAttendance.data;
+  if (!data || !data.days) return;
+
+  const dayObj = data.days.find(d => d.day === dayNum) || data.days[0];
+  if (!dayObj) return;
+
+  // Başlıkları güncelle
+  const titleEl = document.getElementById('bossSelectedDayTitle');
+  if (titleEl) {
+    const sunTag = dayObj.is_sunday ? ' (Pazar Mesaisi)' : '';
+    titleEl.innerText = `🗓️ ${dayObj.date} ${dayObj.day_name}${sunTag} — Departman Mevcut Dağılımı`;
+  }
+
+  const badgeEl = document.getElementById('bossSelectedDayBadge');
+  if (badgeEl) {
+    badgeEl.innerText = `${dayObj.total_workers} Çalışan • ${dayObj.active_department_count} Bölüm • ${fmtHours(dayObj.total_hours)}s`;
+  }
+
+  // Departman kartlarını filtrele ve çiz
+  const container = document.getElementById('bossDeptCardsContainer');
+  if (!container) return;
+
+  let depts = dayObj.departments || [];
+  const q = (AppState.bossAttendance.search || '').trim().toLowerCase();
+  if (q) {
+    depts = depts.filter(d => d.department.toLowerCase().includes(q));
+  }
+
+  if (depts.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted); background: var(--bg-surface); border-radius: var(--radius-md);">
+        Bu günde arama kriterine uygun çalışan departman kaydı bulunamadı.
+      </div>
+    `;
+    return;
+  }
+
+  const maxWorkersInDay = Math.max(...dayObj.departments.map(d => d.count), 1);
+  let html = '';
+
+  depts.forEach(d => {
+    const barWidth = Math.max(4, Math.round((d.count / maxWorkersInDay) * 100));
+    const avgH = d.count > 0 ? (d.hours / d.count).toFixed(1).replace('.', ',') : '0,0';
+
+    html += `
+      <div class="boss-dept-card">
+        <div class="boss-dept-top">
+          <div class="boss-dept-title-box">
+            <div class="boss-dept-name" title="${d.department}">${d.department}</div>
+            <div class="boss-dept-share">Günlük Katılım Payı: <strong>%${d.percentage.toFixed(1).replace('.', ',')}</strong></div>
+          </div>
+          <div class="boss-dept-count-badge">${d.count} Kişi</div>
+        </div>
+
+        <div class="boss-progress-track">
+          <div class="boss-progress-bar" style="width: ${barWidth}%;"></div>
+        </div>
+
+        <div class="boss-dept-bottom">
+          <div class="boss-dept-hours-stats">
+            Toplam: <strong>${fmtHours(d.hours)}s</strong> ${d.ot_hours > 0 ? `• FM: <strong style="color:var(--color-warning);">${fmtHours(d.ot_hours)}s</strong>` : ''} • Ort: <strong>${avgH}s</strong>
+          </div>
+          <button class="btn-dept-workers" onclick="openDeptWorkersModal(${dayNum}, '${d.department.replace(/'/g, "\\'")}')">
+            👥 Çalışanları Gör (${d.count})
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function filterBossDailyDepartments() {
+  const input = document.getElementById('bossDeptSearchInput');
+  if (input) {
+    AppState.bossAttendance.search = input.value;
+    renderBossDailyBreakdown(AppState.bossAttendance.selectedDay);
+  }
+}
+
+function renderBossHeatmapMatrix(deptMatrix, daysInMonth, sundays, dailyTotals) {
+  const thead = document.getElementById('bossHeatmapHead');
+  const tbody = document.getElementById('bossHeatmapBody');
+  const tfoot = document.getElementById('bossHeatmapFoot');
+  if (!thead || !tbody || !deptMatrix) return;
+
+  const sunSet = new Set(sundays || []);
+
+  // 1. Tablo Başlığı
+  let thHtml = `
+    <tr>
+      <th style="width: 45px;">Sıra</th>
+      <th class="th-sticky-dept">Departman / Bölüm</th>
+  `;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isSun = sunSet.has(d);
+    thHtml += `
+      <th class="${isSun ? 'th-sun' : ''}" style="width: 32px;" title="${d}. Gün ${isSun ? '(Pazar)' : ''}">${d.toString().padStart(2, '0')}</th>
+    `;
+  }
+
+  thHtml += `
+      <th style="width: 75px; text-align: right;">Adam-Gün</th>
+      <th style="width: 65px; text-align: right;">Ortalama</th>
+      <th style="width: 60px; text-align: center;">Zirve</th>
+      <th style="width: 85px; text-align: right;">Toplam Saat</th>
+    </tr>
+  `;
+  thead.innerHTML = thHtml;
+
+  // 2. Tablo Gövdesi (Satır satır departmanlar)
+  let tbHtml = '';
+  deptMatrix.forEach((dm, idx) => {
+    const counts = dm.daily_counts || [];
+
+    tbHtml += `<tr>`;
+    tbHtml += `<td style="color: var(--text-dim); font-size: 11px;">${idx + 1}</td>`;
+    tbHtml += `<td class="td-sticky-dept" title="${dm.department}">${dm.department}</td>`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cnt = counts[d - 1] || 0;
+      const isSun = sunSet.has(d);
+
+      let heatClass = 'heat-0';
+      if (cnt >= 30) heatClass = 'heat-high';
+      else if (cnt >= 10) heatClass = 'heat-med';
+      else if (cnt > 0) heatClass = 'heat-low';
+
+      const sunColClass = isSun ? 'is-sun-col' : '';
+      const displayVal = cnt > 0 ? cnt : '-';
+
+      tbHtml += `
+        <td class="boss-heat-cell ${heatClass} ${sunColClass}" 
+            title="${d}. Gün — ${dm.department}: ${cnt} Personel (Çalışan listesini açmak için tıklayın)"
+            onclick="openDeptWorkersModal(${d}, '${dm.department.replace(/'/g, "\\'")}')">
+          ${displayVal}
+        </td>
+      `;
+    }
+
+    tbHtml += `<td style="text-align: right; font-weight: 700; color: var(--color-cyan); font-family: var(--font-mono);">${dm.total_man_days}</td>`;
+    tbHtml += `<td style="text-align: right; font-family: var(--font-mono);">${dm.avg_workers_on_active_days.toFixed(1).replace('.', ',')}</td>`;
+    tbHtml += `<td style="text-align: center; font-weight: 700; color: var(--color-warning); font-family: var(--font-mono);">${dm.peak_workers}</td>`;
+    tbHtml += `<td style="text-align: right; font-family: var(--font-mono);">${fmtHours(dm.total_hours)}</td>`;
+    tbHtml += `</tr>`;
+  });
+
+  tbody.innerHTML = tbHtml;
+
+  // 3. Tablo Alt Toplam Satırı (Tüm Fabrika Günlük Mevcut)
+  if (tfoot && dailyTotals) {
+    let tfHtml = `
+      <tr>
+        <td style="color: var(--text-dim); font-size: 11px;">∑</td>
+        <td class="td-sticky-dept" style="color: var(--text-main); font-weight: 800;">TÜM FABRİKA GÜNLÜK MEVCUT</td>
+    `;
+
+    let totalManDaysAll = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const tot = dailyTotals[d] || 0;
+      totalManDaysAll += tot;
+      tfHtml += `<td style="text-align: center; font-weight: 800;">${tot}</td>`;
+    }
+
+    const avgDailyAll = (totalManDaysAll / daysInMonth).toFixed(1).replace('.', ',');
+    const peakAll = Math.max(...Object.values(dailyTotals), 0);
+    const totalHoursAll = deptMatrix.reduce((acc, dm) => acc + (dm.total_hours || 0), 0);
+
+    tfHtml += `
+        <td style="text-align: right; font-weight: 800;">${totalManDaysAll}</td>
+        <td style="text-align: right; font-weight: 800;">${avgDailyAll}</td>
+        <td style="text-align: center; font-weight: 800; color: var(--color-warning);">${peakAll}</td>
+        <td style="text-align: right; font-weight: 800;">${fmtHours(totalHoursAll)}</td>
+      </tr>
+    `;
+    tfoot.innerHTML = tfHtml;
+  }
+}
+
+function populateBossTrendDeptDropdown(allDepts) {
+  const select = document.getElementById('bossTrendDeptSelect');
+  if (!select || !allDepts) return;
+
+  const currentVal = select.value || 'ALL';
+  let options = '<option value="ALL">🏭 Tüm Fabrika Toplamı</option>';
+
+  allDepts.forEach(dept => {
+    options += `<option value="${dept}">${dept}</option>`;
+  });
+
+  select.innerHTML = options;
+  select.value = currentVal;
+}
+
+function renderBossTrendChart() {
+  const container = document.getElementById('bossTrendChartContainer');
+  const data = AppState.bossAttendance.data;
+  if (!container || !data || !data.days) return;
+
+  const select = document.getElementById('bossTrendDeptSelect');
+  const selectedDept = select ? select.value : 'ALL';
+
+  const days = data.days;
+  const daysCount = data.days_in_month || 30;
+
+  // Veri serisini hazırla
+  let series = [];
+  let titlePrefix = 'Tüm Fabrika';
+
+  if (selectedDept === 'ALL') {
+    series = days.map(d => ({
+      day: d.day,
+      date: d.date,
+      day_name: d.day_name,
+      is_sunday: d.is_sunday,
+      count: d.total_workers,
+      hours: d.total_hours
+    }));
+  } else {
+    titlePrefix = selectedDept;
+    series = days.map(d => ({
+      day: d.day,
+      date: d.date,
+      day_name: d.day_name,
+      is_sunday: d.is_sunday,
+      count: d.dept_counts[selectedDept] || 0,
+      hours: d.dept_hours[selectedDept] || 0.0
+    }));
+  }
+
+  const width = container.clientWidth || 750;
+  const height = 240;
+  const padLeft = 45;
+  const padBottom = 30;
+  const padTop = 20;
+  const padRight = 20;
+
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
+
+  const maxVal = Math.max(...series.map(s => s.count), 5);
+  // Y ekseni üst sınırını güzel bir yuvarlağa tamamla
+  const yAxisMax = Math.ceil(maxVal * 1.15);
+
+  let svg = `
+    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" style="width: 100%; height: 100%; overflow: visible;">
+      <defs>
+        <linearGradient id="bossAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.45"/>
+          <stop offset="100%" stop-color="#0284c7" stop-opacity="0.0"/>
+        </linearGradient>
+      </defs>
+  `;
+
+  // Kılavuz çizgileri
+  const gridSteps = 4;
+  for (let i = 0; i <= gridSteps; i++) {
+    const yVal = padTop + (chartH / gridSteps) * i;
+    const labelVal = Math.round(yAxisMax - (yAxisMax / gridSteps) * i);
+    svg += `
+      <line x1="${padLeft}" y1="${yVal}" x2="${width - padRight}" y2="${yVal}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3"/>
+      <text x="${padLeft - 8}" y="${yVal + 4}" fill="#64748b" font-size="10" font-family="'JetBrains Mono', monospace" text-anchor="end">${labelVal}</text>
+    `;
+  }
+
+  // Koordinatları hesapla
+  const points = series.map((s, idx) => {
+    const x = padLeft + (idx / (daysCount - 1)) * chartW;
+    const y = padTop + chartH - (s.count / yAxisMax) * chartH;
+    return { ...s, x, y };
+  });
+
+  // Alan (Area) path'i
+  let areaD = `M ${points[0].x} ${padTop + chartH}`;
+  points.forEach(p => {
+    areaD += ` L ${p.x} ${p.y}`;
+  });
+  areaD += ` L ${points[points.length - 1].x} ${padTop + chartH} Z`;
+
+  svg += `<path d="${areaD}" fill="url(#bossAreaGrad)" />`;
+
+  // Çizgi (Line) path'i
+  let lineD = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    lineD += ` L ${points[i].x} ${points[i].y}`;
+  }
+
+  svg += `<path d="${lineD}" fill="none" stroke="#06b6d4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+
+  // Noktalar ve Hover Etiketleri
+  points.forEach(p => {
+    const dotFill = p.is_sunday ? '#eab308' : '#38bdf8';
+    const dotR = p.is_sunday ? 4.5 : 3.5;
+
+    svg += `
+      <circle cx="${p.x}" cy="${p.y}" r="${dotR}" fill="${dotFill}" stroke="#0f172a" stroke-width="1.5" style="cursor: pointer;">
+        <title>${p.date} (${p.day_name})&#10;${titlePrefix}: ${p.count} Personel&#10;Çalışma: ${p.hours} Saat ${p.is_sunday ? '• (Pazar)' : ''}</title>
+      </circle>
+    `;
+
+    // Gün etiketleri
+    if (p.day % 2 !== 0 || p.is_sunday) {
+      svg += `
+        <text x="${p.x}" y="${height - 8}" fill="${p.is_sunday ? '#eab308' : '#94a3b8'}" font-size="9" font-family="'JetBrains Mono', monospace" text-anchor="middle" font-weight="${p.is_sunday ? '700' : '500'}">${p.day}</text>
+      `;
+    }
+  });
+
+  svg += `</svg>`;
+  container.innerHTML = svg;
+}
+
+// ----------------------------------------------------------------------------
+// MODAL: BÖLÜM ÇALIŞANLARI DETAYI
+// ----------------------------------------------------------------------------
+function openDeptWorkersModal(dayNum, deptName) {
+  const data = AppState.bossAttendance.data;
+  if (!data || !data.days) return;
+
+  const dayObj = data.days.find(d => d.day === dayNum);
+  if (!dayObj) return;
+
+  const deptObj = (dayObj.all_departments || []).find(d => d.department.toLowerCase() === deptName.toLowerCase());
+  const workers = deptObj ? deptObj.workers : [];
+
+  AppState.bossAttendance.modalWorkers = workers || [];
+  AppState.bossAttendance.modalSearch = '';
+
+  const titleEl = document.getElementById('modalDeptWorkersTitle');
+  if (titleEl) {
+    titleEl.innerText = `👥 ${deptName} — ${dayObj.date} (${dayObj.day_name})`;
+  }
+
+  const subEl = document.getElementById('modalDeptWorkersSub');
+  if (subEl) {
+    const totH = deptObj ? deptObj.hours : 0.0;
+    const isSun = dayObj.is_sunday ? ' • Pazar Mesaisi' : '';
+    subEl.innerText = `${workers.length} Aktif Personel • Toplam ${fmtHours(totH)} Saat${isSun}`;
+  }
+
+  const badgeEl = document.getElementById('modalDeptWorkersCountBadge');
+  if (badgeEl) badgeEl.innerText = `${workers.length} Personel`;
+
+  const searchInput = document.getElementById('modalDeptWorkersSearch');
+  if (searchInput) searchInput.value = '';
+
+  renderModalDeptWorkersTable(workers);
+  openModal('modalDeptWorkers');
+}
+
+function renderModalDeptWorkersTable(workers) {
+  const tbody = document.getElementById('modalDeptWorkersTableBody');
+  if (!tbody) return;
+
+  if (!workers || workers.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">Bu bölümde kayıtlı çalışan bulunamadı.</td></tr>`;
+    return;
+  }
+
+  let html = '';
+  workers.forEach((w, idx) => {
+    let statusBadge = '<span class="status-pill status-normal">NORMAL</span>';
+    if (w.status_type === 'BÖLÜM_PRİMLİ') {
+      statusBadge = '<span class="status-pill status-bonus">PRİMLİ</span>';
+    } else if (w.status_type.includes('ÇIKIŞ_YOK') || w.status_type.includes('GİRİŞ_YOK')) {
+      statusBadge = '<span class="status-pill status-warning">TEK BASIM</span>';
+    } else if (w.status_type.includes('ÇOKLU')) {
+      statusBadge = '<span class="status-pill status-info">ÇOKLU BASIM</span>';
+    }
+
+    html += `
+      <tr>
+        <td style="text-align: center; color: var(--text-dim);">${idx + 1}</td>
+        <td class="cell-mono">${w.tc || '-'}</td>
+        <td class="cell-bold">${w.name}</td>
+        <td class="cell-mono" style="text-align: center;">${w.g_saat || '-'}</td>
+        <td class="cell-mono" style="text-align: center;">${w.c_saat || '-'}</td>
+        <td class="cell-mono cell-accent cell-bold" style="text-align: right;">${fmtHours(w.hours)}</td>
+        <td class="cell-mono cell-green" style="text-align: right;">${w.ot_hours > 0 ? fmtHours(w.ot_hours) : '-'}</td>
+        <td style="text-align: center;">${statusBadge}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function filterModalDeptWorkers() {
+  const input = document.getElementById('modalDeptWorkersSearch');
+  const q = input ? input.value.trim().toLowerCase() : '';
+  const allWorkers = AppState.bossAttendance.modalWorkers || [];
+
+  if (!q) {
+    renderModalDeptWorkersTable(allWorkers);
+    return;
+  }
+
+  const filtered = allWorkers.filter(w => {
+    const name = (w.name || '').toLowerCase();
+    const tc = (w.tc || '').toLowerCase();
+    return name.includes(q) || tc.includes(q);
+  });
+
+  renderModalDeptWorkersTable(filtered);
+}
+
+function exportCurrentDayPrint() {
+  window.print();
+}
+
+// ============================================================================
+// 10. SERVİS VE GÜZERGAH LOJİSTİK RADARI (SHUTTLE RADAR)
+// ============================================================================
+async function loadShuttleLogistics() {
+  try {
+    const res = await fetch('/api/analytics/shuttle-logistics');
+    if (!res.ok) throw new Error('Servis lojistik verisi alınamadı');
+    const data = await res.json();
+    AppState.shuttle.data = data;
+
+    // KPI'lar
+    const kpis = data.kpis || {};
+    document.getElementById('kpiShuttleTotalRoutes').innerText = kpis.total_routes || '-';
+    document.getElementById('kpiShuttleTotalTrips').innerText = (kpis.total_passenger_trips || 0).toLocaleString('tr-TR');
+    document.getElementById('kpiShuttleAvgPax').innerText = `${kpis.avg_working_day_passengers || 0} Yolcu`;
+    document.getElementById('kpiShuttleBusiestRoute').innerText = kpis.busiest_route || '-';
+
+    // Gün Seçim Şeridi
+    renderShuttleDayRibbon();
+
+    // Seçili günün rota kartları
+    const selectedDay = AppState.shuttle.selectedDay || 1;
+    selectShuttleDay(selectedDay);
+
+    // Aylık Güzergah Özet Tablosu
+    renderShuttleSummaryTable(data.routes_summary || []);
+
+    const badge = document.getElementById('badgeShuttleRoutes');
+    if (badge) badge.innerText = `${(data.routes_summary || []).length} Hat`;
+  } catch (err) {
+    console.error('Shuttle loading error:', err);
+    showToast('Servis lojistik verileri yüklenirken hata oluştu.', 'error');
+  }
+}
+
+function renderShuttleDayRibbon() {
+  const container = document.getElementById('shuttleDaysScroll');
+  if (!container || !AppState.shuttle.data) return;
+
+  const days = AppState.shuttle.data.days || [];
+  const selectedDay = AppState.shuttle.selectedDay || 1;
+
+  let html = '';
+  days.forEach(d => {
+    const isSel = d.day === selectedDay;
+    const isSun = d.is_sunday;
+    const btnCls = `boss-day-btn ${isSel ? 'active' : ''} ${isSun ? 'is-sunday' : ''}`;
+
+    html += `
+      <button class="${btnCls}" onclick="selectShuttleDay(${d.day})">
+        <span class="day-num">Gün ${d.day}</span>
+        <span class="day-pax" style="font-size: 11px; font-weight: 700; color: #818cf8;">${d.total_passengers} Yolcu</span>
+        <span class="day-sub" style="font-size: 10px; color: var(--text-dim);">${d.total_vehicles} Araç</span>
+      </button>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function selectShuttleDay(day) {
+  AppState.shuttle.selectedDay = day;
+  renderShuttleDayRibbon();
+
+  const data = AppState.shuttle.data;
+  if (!data || !data.days) return;
+
+  const dayObj = data.days.find(d => d.day === day);
+  if (!dayObj) return;
+
+  // Header bilgileri
+  const dateBadge = document.getElementById('shuttleSelectedDateBadge');
+  if (dateBadge) dateBadge.innerText = `${dayObj.day} ${MONTH_NAMES[data.month] || data.month} ${data.year} (${dayObj.day_name})`;
+
+  document.getElementById('shuttleDayTotalPax').innerText = `${dayObj.total_passengers} Yolcu`;
+  document.getElementById('shuttleDayTotalVehicles').innerText = `${dayObj.total_vehicles} Sefer/Araç`;
+
+  // Rota Kartlarını Çiz
+  renderShuttleRoutesGrid(dayObj);
+}
+
+function renderShuttleRoutesGrid(dayData) {
+  const container = document.getElementById('shuttleRoutesGrid');
+  if (!container) return;
+
+  const routes = dayData.routes || [];
+  let html = '';
+
+  routes.forEach(r => {
+    const pax = r.passenger_count || 0;
+    const v = r.vehicle || {};
+    const occ = v.occupancy_rate || 0;
+
+    html += `
+      <div class="shuttle-route-card">
+        <div class="shuttle-card-top">
+          <div>
+            <div class="shuttle-route-name">${r.route_name}</div>
+            <div class="shuttle-vehicle-badge">🚐 ${v.description || 'Tahsis Yok'}</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="shuttle-pax-count">${pax}</div>
+            <div style="font-size: 11px; color: var(--text-dim);">Yolcu</div>
+          </div>
+        </div>
+
+        <div class="shuttle-progress-wrap">
+          <div style="display: flex; justify-content: space-between; font-size: 11px;">
+            <span style="color: var(--text-muted);">Doluluk Oranı:</span>
+            <strong style="color: #c7d2fe;">%${occ}</strong>
+          </div>
+          <div class="shuttle-occupancy-track">
+            <div class="shuttle-occupancy-fill" style="width: ${Math.min(occ, 100)}%;"></div>
+          </div>
+        </div>
+
+        <div class="shuttle-shifts-row">
+          <span class="shuttle-shift-pill" title="08:00 - 16:00 Gündüz Vardiyası">V1 (Gündüz): <strong>${r.v1_count}</strong></span>
+          <span class="shuttle-shift-pill" title="16:00 - 24:00 Akşam Vardiyası">V2 (Akşam): <strong>${r.v2_count}</strong></span>
+          <span class="shuttle-shift-pill" title="24:00 - 08:00 Gece Vardiyası">V3 (Gece): <strong>${r.v3_count}</strong></span>
+        </div>
+
+        <div style="margin-top: 4px; display: flex; justify-content: flex-end;">
+          <button class="btn btn-sm btn-outline" onclick="openShuttleRidersModal('${r.route_id}')" ${pax === 0 ? 'disabled' : ''}>
+            <span>Yolcu Listesi (${pax})</span>
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function renderShuttleSummaryTable(routes) {
+  const tbody = document.getElementById('shuttleSummaryTableBody');
+  if (!tbody) return;
+
+  let html = '';
+  routes.forEach(r => {
+    html += `
+      <tr>
+        <td class="cell-bold">${r.route_name}</td>
+        <td style="text-align: center;" class="cell-mono">${r.assigned_personnel} Kişi</td>
+        <td style="text-align: center;" class="cell-mono cell-accent">${(r.total_passenger_trips || 0).toLocaleString('tr-TR')}</td>
+        <td style="text-align: center;" class="cell-mono">${r.avg_daily_passengers}</td>
+        <td style="text-align: center;" class="cell-mono cell-bold">${r.peak_passengers} (Gün ${r.peak_day})</td>
+        <td style="text-align: center;">
+          <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.3);">
+            ${r.typical_vehicle ? r.typical_vehicle.description : '-'}
+          </span>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function openShuttleRidersModal(routeId) {
+  const data = AppState.shuttle.data;
+  if (!data) return;
+
+  const day = AppState.shuttle.selectedDay || 1;
+  const dayObj = data.days.find(d => d.day === day);
+  if (!dayObj) return;
+
+  const routeObj = dayObj.routes.find(r => r.route_id === routeId);
+  if (!routeObj) return;
+
+  document.getElementById('modalShuttleRidersTitle').innerText = `${routeObj.route_name} — Yolcu Listesi`;
+  document.getElementById('modalShuttleRidersSub').innerText = `${dayObj.day} ${MONTH_NAMES[data.month] || data.month} ${data.year} (${dayObj.day_name}) — Toplam ${routeObj.passenger_count} Yolcu`;
+
+  const tbody = document.getElementById('modalShuttleRidersTableBody');
+  let html = '';
+
+  (routeObj.passengers || []).forEach((p, idx) => {
+    html += `
+      <tr>
+        <td style="text-align: center; color: var(--text-dim);">${idx + 1}</td>
+        <td class="cell-mono">${p.tc || '-'}</td>
+        <td class="cell-bold">${p.ad_soyad}</td>
+        <td>${p.bolum || '-'}</td>
+        <td style="color: var(--text-muted);">${p.ikamet || '-'}</td>
+        <td style="text-align: center;"><span class="badge badge-${p.shift_code ? p.shift_code.toLowerCase() : 'v1'}">${p.shift_code}</span></td>
+        <td class="cell-mono" style="text-align: center;">${p.entry_time || '-'}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html || '<tr><td colspan="7" style="text-align:center; padding: 20px;">Bu hatta yolcu kaydı yok.</td></tr>';
+  openModal('modalShuttleRiders');
+}
+
+// ============================================================================
+// 11. VARDİYA ÇİZELGESİ VE SAPMA RADARI (SHIFT PLANNER)
+// ============================================================================
+async function loadShiftPlanner() {
+  try {
+    const day = AppState.shiftPlanner.selectedDay || 1;
+    const res = await fetch(`/api/shifts/planner?day=${day}`);
+    if (!res.ok) throw new Error('Vardiya planlama verisi alınamadı');
+    const data = await res.json();
+    AppState.shiftPlanner.data = data;
+
+    // Departman select doldur (ilk yüklemede)
+    populateShiftAssignDepts();
+
+    // KPI'lar
+    const comp = data.comparison || {};
+    document.getElementById('kpiShiftComplianceRate').innerText = `%${comp.compliance_rate || 100}`;
+    document.getElementById('kpiShiftTotalDeviations').innerText = comp.total_deviations || 0;
+    document.getElementById('kpiShiftLateCount').innerText = comp.counts ? comp.counts.LATE_ARRIVAL || 0 : 0;
+    document.getElementById('kpiShiftAbsentCount').innerText = comp.counts ? comp.counts.ABSENT || 0 : 0;
+
+    // Ribbon ve Tarih Başlığı
+    document.getElementById('shiftSelectedDateBadge').innerText = `${day} Eylül 2026`;
+    document.getElementById('shiftCompliantCount').innerText = `${comp.counts ? comp.counts.COMPLIANT || 0 : 0} Kişi`;
+    document.getElementById('shiftDeviationsCount').innerText = `${comp.total_deviations || 0} Kişi`;
+
+    renderShiftDayRibbon();
+
+    // Sapma ve Uyum Tablosunu Çiz
+    renderShiftComparisonTable();
+
+    const badge = document.getElementById('badgeShiftDeviations');
+    if (badge) badge.innerText = `Sapma ${comp.total_deviations || 0}`;
+  } catch (err) {
+    console.error('Shift planner error:', err);
+    showToast('Vardiya planlama verileri yüklenirken hata oluştu.', 'error');
+  }
+}
+
+function renderShiftDayRibbon() {
+  const container = document.getElementById('shiftDaysScroll');
+  if (!container) return;
+
+  const selectedDay = AppState.shiftPlanner.selectedDay || 1;
+  let html = '';
+
+  for (let d = 1; d <= 30; d++) {
+    const isSel = d === selectedDay;
+    const isSun = [6, 13, 20, 27].includes(d);
+    const btnCls = `boss-day-btn ${isSel ? 'active' : ''} ${isSun ? 'is-sunday' : ''}`;
+
+    html += `
+      <button class="${btnCls}" onclick="selectShiftDay(${d})">
+        <span class="day-num">Gün ${d}</span>
+        <span class="day-pax" style="font-size: 11px; font-weight: 700; color: #f43f5e;">${isSun ? 'Tatil' : 'Vardiya'}</span>
+      </button>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+function selectShiftDay(day) {
+  AppState.shiftPlanner.selectedDay = day;
+  loadShiftPlanner();
+}
+
+function populateShiftAssignDepts() {
+  const sel = document.getElementById('shiftAssignDeptSelect');
+  if (!sel || sel.children.length > 1) return;
+
+  const matrix = AppState.matrix.items || [];
+  const depts = new Set();
+  matrix.forEach(m => {
+    if (m.bolum) depts.add(m.bolum);
+  });
+
+  Array.from(depts).sort().forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.innerText = d;
+    sel.appendChild(opt);
+  });
+}
+
+async function handleBulkShiftAssign() {
+  const dept = document.getElementById('shiftAssignDeptSelect').value;
+  const shiftCode = document.getElementById('shiftAssignCodeSelect').value;
+  const day = AppState.shiftPlanner.selectedDay || 1;
+
+  try {
+    // Matristen ilgili departmandaki kişileri bul
+    const resMatrix = await fetch('/api/matrix?page=1&page_size=500');
+    const mData = await resMatrix.json();
+    const allPersons = mData.items || [];
+
+    const targetPersons = dept === 'ALL'
+      ? allPersons
+      : allPersons.filter(p => p.bolum === dept);
+
+    if (targetPersons.length === 0) {
+      showToast('Seçilen departmanda personel bulunamadı.', 'warning');
+      return;
+    }
+
+    const assignments = targetPersons.map(p => ({
+      name_key: p.name_key,
+      shift_code: shiftCode,
+      note: `${dept} Toplu Vardiya Planı`
+    }));
+
+    const postRes = await fetch('/api/shifts/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        day: day,
+        shift_code: shiftCode,
+        assignments: assignments
+      })
+    });
+
+    if (!postRes.ok) throw new Error('Vardiya kaydı başarısız');
+    const resJson = await postRes.json();
+    showToast(`${targetPersons.length} personele ${shiftCode} vardiyası başarıyla atandı!`, 'success');
+
+    // Tabloyu tazele
+    loadShiftPlanner();
+  } catch (err) {
+    console.error('Bulk shift assign error:', err);
+    showToast('Vardiya planı atanırken hata oluştu.', 'error');
+  }
+}
+
+function filterShiftList(filterType) {
+  AppState.shiftPlanner.filter = filterType;
+
+  // Buton aktifliklerini güncelle
+  ['btnFilterShiftAll', 'btnFilterShiftDeviations', 'btnFilterShiftLate', 'btnFilterShiftEarly', 'btnFilterShiftAbsent'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+
+  if (filterType === 'ALL') document.getElementById('btnFilterShiftAll').classList.add('active');
+  if (filterType === 'DEVIATIONS') document.getElementById('btnFilterShiftDeviations').classList.add('active');
+  if (filterType === 'LATE') document.getElementById('btnFilterShiftLate').classList.add('active');
+  if (filterType === 'EARLY') document.getElementById('btnFilterShiftEarly').classList.add('active');
+  if (filterType === 'ABSENT') document.getElementById('btnFilterShiftAbsent').classList.add('active');
+
+  renderShiftComparisonTable();
+}
+
+function renderShiftComparisonTable() {
+  const tbody = document.getElementById('shiftComparisonTableBody');
+  if (!tbody || !AppState.shiftPlanner.data) return;
+
+  const comp = AppState.shiftPlanner.data.comparison || {};
+  const filter = AppState.shiftPlanner.filter || 'ALL';
+
+  let list = [];
+  if (filter === 'ALL') {
+    list = [...(comp.deviations || []), ...(comp.compliant || [])];
+  } else if (filter === 'DEVIATIONS') {
+    list = comp.deviations || [];
+  } else if (filter === 'LATE') {
+    list = (comp.deviations || []).filter(d => d.status === 'LATE_ARRIVAL');
+  } else if (filter === 'EARLY') {
+    list = (comp.deviations || []).filter(d => d.status === 'EARLY_EXIT');
+  } else if (filter === 'ABSENT') {
+    list = (comp.deviations || []).filter(d => d.status === 'ABSENT');
+  }
+
+  let html = '';
+  list.forEach((item, idx) => {
+    let badgeClass = 'badge-compliant';
+    if (item.status === 'LATE_ARRIVAL') badgeClass = 'badge-late';
+    if (item.status === 'EARLY_EXIT') badgeClass = 'badge-early';
+    if (item.status === 'ABSENT') badgeClass = 'badge-absent';
+    if (item.status === 'UNPLANNED_WORK') badgeClass = 'badge-unplanned';
+
+    html += `
+      <tr>
+        <td style="text-align: center; color: var(--text-dim);">${idx + 1}</td>
+        <td class="cell-mono">${item.tc || '-'}</td>
+        <td class="cell-bold">${item.ad_soyad}</td>
+        <td>${item.bolum || '-'}</td>
+        <td style="text-align: center;">
+          <span class="badge badge-${(item.scheduled_shift || 'v1').toLowerCase()}">${item.scheduled_shift}</span>
+        </td>
+        <td class="cell-mono" style="text-align: center;">${item.entry_time || '-'}</td>
+        <td class="cell-mono" style="text-align: center;">${item.exit_time || '-'}</td>
+        <td class="cell-mono cell-accent" style="text-align: right;">${item.actual_hours > 0 ? fmtHours(item.actual_hours) : '-'}</td>
+        <td>
+          <span class="badge ${badgeClass}">${item.status_desc}</span>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html || '<tr><td colspan="9" style="text-align:center; padding: 20px;">Kayıt bulunamadı.</td></tr>';
+}
+
+// ============================================================================
+// 12. PATRON & YÖNETİM İCRA BRİFİNGİ (EXECUTIVE BRIEFING)
+// ============================================================================
+function openExecutiveBriefingModal() {
+  // Gün selectini doldur
+  const sel = document.getElementById('briefingDaySelect');
+  if (sel && sel.children.length === 0) {
+    for (let d = 1; d <= 30; d++) {
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.innerText = `Gün ${d}`;
+      sel.appendChild(opt);
+    }
+  }
+
+  loadExecutiveBriefingText('morning');
+  openModal('modalExecutiveBriefing');
+}
+
+async function loadExecutiveBriefingText(briefingType) {
+  if (!briefingType) {
+    briefingType = document.getElementById('btnBriefingMorning').classList.contains('btn-primary') ? 'morning' : 'evening';
+  }
+
+  // Buton aktiflikleri
+  if (briefingType === 'morning') {
+    document.getElementById('btnBriefingMorning').className = 'btn btn-sm btn-primary';
+    document.getElementById('btnBriefingEvening').className = 'btn btn-sm btn-outline';
+  } else {
+    document.getElementById('btnBriefingMorning').className = 'btn btn-sm btn-outline';
+    document.getElementById('btnBriefingEvening').className = 'btn btn-sm btn-primary';
+  }
+
+  const daySel = document.getElementById('briefingDaySelect');
+  const day = daySel ? parseInt(daySel.value) || 1 : 1;
+
+  const textarea = document.getElementById('briefingTextContent');
+  if (textarea) textarea.value = 'Brifing metni hazırlanıyor...';
+
+  try {
+    const res = await fetch(`/api/executive/briefing?briefing_type=${briefingType}&day=${day}`);
+    if (!res.ok) throw new Error('Brifing metni üretilemedi');
+    const data = await res.json();
+    if (textarea) textarea.value = data.markdown || data.plain_text;
+  } catch (err) {
+    console.error('Briefing error:', err);
+    if (textarea) textarea.value = 'Brifing metni yüklenirken hata oluştu.';
+  }
+}
+
+function copyExecutiveBriefingToClipboard() {
+  const textarea = document.getElementById('briefingTextContent');
+  if (!textarea || !textarea.value) return;
+
+  navigator.clipboard.writeText(textarea.value).then(() => {
+    const notice = document.getElementById('briefingCopiedNotice');
+    if (notice) {
+      notice.innerText = '✓ Metin panoya kopyalandı! WhatsApp / Telegram\'a yapıştırabilirsiniz.';
+      setTimeout(() => { notice.innerText = ''; }, 3500);
+    }
+    showToast('Brifing metni panoya kopyalandı!', 'success');
+  }).catch(() => {
+    textarea.select();
+    document.execCommand('copy');
+    showToast('Metin kopyalandı!', 'success');
+  });
+}
+
+// ============================================================================
+// 13. VERİTABANI YEDEKLEME MERKEZİ (DATABASE BACKUP)
+// ============================================================================
+function openDatabaseBackupModal() {
+  loadDatabaseBackupsList();
+  openModal('modalDatabaseBackup');
+}
+
+async function loadDatabaseBackupsList() {
+  const tbody = document.getElementById('dbBackupsTableBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 14px;">Yedek dosyaları taranıyor...</td></tr>';
+
+  try {
+    const res = await fetch('/api/database/backups');
+    if (!res.ok) throw new Error('Yedek listesi alınamadı');
+    const data = await res.json();
+
+    const backups = data.backups || [];
+    if (backups.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 14px; color: var(--text-muted);">Henüz alınmış bir veritabanı yedeği bulunmuyor.</td></tr>';
+      return;
+    }
+
+    let html = '';
+    backups.forEach(b => {
+      const dt = new Date(b.created_at);
+      const formattedDate = dt.toLocaleString('tr-TR');
+
+      html += `
+        <tr>
+          <td class="cell-bold cell-mono">🗄️ ${b.filename}</td>
+          <td class="cell-mono" style="text-align: right;">${b.size_kb} KB</td>
+          <td class="cell-mono" style="text-align: center; font-size: 11px;">${formattedDate}</td>
+          <td style="text-align: center;">
+            <a href="/api/download/database-backup/${encodeURIComponent(b.filename)}" class="btn btn-sm btn-outline" download style="text-decoration: none;">
+              <span>İndir</span>
+            </a>
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+  } catch (err) {
+    console.error('Backup list error:', err);
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: #f87171;">Yedek listesi yüklenemedi.</td></tr>';
+  }
+}
+
+async function handleDatabaseBackupNow() {
+  const btn = document.getElementById('btnTriggerBackupNow');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/database/backup', { method: 'POST' });
+    if (!res.ok) throw new Error('Yedek alma işlemi başarısız');
+    const data = await res.json();
+
+    showToast(`✓ Veritabanı yedeği başarıyla oluşturuldu: ${data.filename} (${data.size_kb} KB)`, 'success');
+    loadDatabaseBackupsList();
+  } catch (err) {
+    console.error('Backup trigger error:', err);
+    showToast('Yedek alma sırasında hata oluştu.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+
+
 
 

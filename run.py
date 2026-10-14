@@ -51,7 +51,7 @@ def main():
         print("===================================================================")
         print(f" FİDE KONSERVE WEB DASHBOARD BAŞLATILIYOR: http://{args.host}:{args.port}")
         print("===================================================================")
-        uvicorn.run("app:app", host=args.host, port=args.port, reload=False)
+        uvicorn.run("app:app", host=args.host, port=args.port, reload=True)
         return
 
     print("===================================================================")

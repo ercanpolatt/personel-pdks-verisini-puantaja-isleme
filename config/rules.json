@@ -36,24 +36,118 @@
     "description": "20:00 - 08:00 Gece / 12 Saatlik Vardiya (04:00 sonrası fazla mesai)"
   },
   "overtime_policy": {
-    "grace_period_minutes": 25,
+    "grace_period_minutes": 20,
     "step_hours": 0.5
   },
-  "department_bonuses": {
-    "_RET_M": {
-      "name": "ÜRETİM Primi",
-      "match_keywords": [
-        "ÜRETİM"
-      ],
-      "min_hours_threshold": 0,
-      "bonus_hours": 2,
-      "description": "ÜRETİM Primi: +2 saat"
-    }
-  },
+  "department_bonuses": {},
   "missing_punch_policy": {
     "morning_cutoff": "12:30",
     "evening_cutoff": "20:00",
     "default_morning_hours": 7.5,
     "default_evening_start": "08:00"
-  }
+  },
+  "financial_settings": {
+    "base_minimum_wage_net": 28075.5,
+    "monthly_working_hours": 225.0,
+    "weekday_ot_multiplier": 1.5,
+    "sunday_ot_multiplier": 1.5,
+    "holiday_ot_multiplier": 2.0
+  },
+  "shuttle_settings": {
+    "default_vehicle_capacity": 16,
+    "vehicle_types": {
+      "minibus": 16,
+      "midibus": 27,
+      "otobus": 45
+    },
+    "routes": [
+      {
+        "route_id": "bergama",
+        "name": "Bergama Merkez & Mahalleleri",
+        "keywords": [
+          "BERGAMA",
+          "MERKEZ",
+          "ZAFER",
+          "İSTİKLAL",
+          "FATİH",
+          "MALTEPE"
+        ]
+      },
+      {
+        "route_id": "dikili",
+        "name": "Dikili & Çandarlı Hattı",
+        "keywords": [
+          "DİKİLİ",
+          "ÇANDARLI",
+          "KABAKUM",
+          "SALİHLER"
+        ]
+      },
+      {
+        "route_id": "kinik",
+        "name": "Kınık & Poyracık Hattı",
+        "keywords": [
+          "KINIK",
+          "POYRACIK",
+          "YAYAKENT"
+        ]
+      },
+      {
+        "route_id": "ayvalik",
+        "name": "Ayvalık & Altınova Hattı",
+        "keywords": [
+          "AYVALIK",
+          "ALTINOVA",
+          "KÜÇÜKKÖY",
+          "SARIMSAKLI"
+        ]
+      },
+      {
+        "route_id": "soma",
+        "name": "Soma Hattı",
+        "keywords": [
+          "SOMA"
+        ]
+      },
+      {
+        "route_id": "diger",
+        "name": "Diğer / Fabrika Çevresi",
+        "keywords": [
+          "FABRİKA",
+          "KÖY",
+          "YEREL"
+        ]
+      }
+    ]
+  },
+  "shift_roster_types": [
+    {
+      "code": "V1",
+      "name": "1. Vardiya (Gündüz)",
+      "hours": "08:00 - 16:00",
+      "standard_hours": 7.5,
+      "badge_class": "badge-v1"
+    },
+    {
+      "code": "V2",
+      "name": "2. Vardiya (Akşam)",
+      "hours": "16:00 - 24:00",
+      "standard_hours": 7.5,
+      "badge_class": "badge-v2"
+    },
+    {
+      "code": "V3",
+      "name": "3. Vardiya (Gece)",
+      "hours": "24:00 - 08:00",
+      "standard_hours": 7.5,
+      "badge_class": "badge-v3"
+    },
+    {
+      "code": "OFF",
+      "name": "Hafta Tatili / İzin",
+      "hours": "-",
+      "standard_hours": 0.0,
+      "badge_class": "badge-off"
+    }
+  ]
 }

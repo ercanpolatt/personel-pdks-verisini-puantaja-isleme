@@ -457,7 +457,7 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
         effective_g = fmt_hm(g_min)
         elapsed_h = (c_min - g_min) / 60.0
         
-        if c_min <= 17 * 60 + 25:
+        if c_min <= 17 * 60 + 20:
             net = elapsed_h
             break_hours = 0.0
             final_h = round(net * 2) / 2.0
@@ -469,9 +469,13 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
         else:
             shift_end = 24 * 60
-            ot_min = c_min - shift_end
+            if (c_min - effective_start) >= 11 * 60 + 30:
+                ot_min = max(0, (c_min - shift_end) - 60)
+                break_hours = 1.5
+            else:
+                ot_min = c_min - shift_end
+                break_hours = 0.5
             base_hours = 7.5
-            break_hours = 0.5
 
     # -------------------------------------------------------------------------
     # 3. AKŞAM VARDİYASI (15:30 - 18:29 Giriş / Standart 16:00 - 24:00)
@@ -500,8 +504,12 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             final_h = round(net * 2) / 2.0
             return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
-        ot_min = c_min - shift_end
-        break_hours = 0.5
+        if (c_min - effective_start) >= 11 * 60 + 30:
+            ot_min = max(0, (c_min - shift_end) - 60)
+            break_hours = 1.5
+        else:
+            ot_min = c_min - shift_end
+            break_hours = 0.5
 
     # -------------------------------------------------------------------------
     # 4. ARA GECE VARDİYASI (18:30 - 19:29 Giriş / Standart 19:00 - 03:00 / 07:00)
@@ -530,8 +538,12 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             final_h = round(net * 2) / 2.0
             return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
-        ot_min = c_min - shift_end
-        break_hours = 0.5
+        if (c_min - effective_start) >= 11 * 60 + 30:
+            ot_min = max(0, (c_min - shift_end) - 60)
+            break_hours = 1.5
+        else:
+            ot_min = c_min - shift_end
+            break_hours = 0.5
 
     # -------------------------------------------------------------------------
     # 5. GECE / 12 SAATLİK VARDİYA (19:30 - 22:29 Giriş / Standart 20:00 - 04:00 / 08:00)
@@ -560,8 +572,12 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             final_h = round(net * 2) / 2.0
             return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
-        ot_min = c_min - shift_end
-        break_hours = 0.5
+        if (c_min - effective_start) >= 11 * 60 + 30:
+            ot_min = max(0, (c_min - shift_end) - 60)
+            break_hours = 1.5
+        else:
+            ot_min = c_min - shift_end
+            break_hours = 0.5
 
     # -------------------------------------------------------------------------
     # 6. GECE VARDİYASI (22:30 - 05:59 Giriş / Standart 24:00 - 08:00)
@@ -595,24 +611,31 @@ def calculate_shift_hours(g_saat_str: str, c_saat_str: str) -> ShiftResult:
             final_h = round(net * 2) / 2.0
             return ShiftResult(final_h, final_h, 0.0, break_hours, effective_g, effective_c, gross_hours)
             
-        ot_min = c_min - shift_end
-        break_hours = 0.5
+        if (c_min - effective_start) >= 11 * 60 + 30:
+            ot_min = max(0, (c_min - shift_end) - 60)
+            break_hours = 1.5
+        else:
+            ot_min = c_min - shift_end
+            break_hours = 0.5
 
     # -------------------------------------------------------------------------
     # Kademeli Fazla Mesai Dilimleri:
-    # 0 - 25 dk   -> 0 saat FM
-    # 26 - 49 dk  -> +0.5 saat FM
-    # 50 - 85 dk  -> +1.0 saat FM
-    # 86 - 109 dk -> +1.5 saat FM ...
+    # 0 - 20 dk   -> 0 saat FM (Tolerans süresi)
+    # 21 - 44 dk  -> +0.5 saat FM (Buçuğa tamamlama)
+    # 45 - 80 dk  -> +1.0 saat FM (45 dk ve sonrası tam saate yuvarlama)
+    # Her tam saat döngüsü için de aynı kural:
+    #   Dakika 0 - 20:   O saatte kalır (+0.0)
+    #   Dakika 21 - 44:  Buçuğa tamamlanır (+0.5)
+    #   Dakika 45 - 59:  Sonraki tam saate yuvarlanır (+1.0)
     # -------------------------------------------------------------------------
-    if ot_min <= 25:
+    if ot_min <= 20:
         step = 0
     else:
         hours_past = ot_min // 60
         min_in_hour = ot_min % 60
-        if min_in_hour <= 25:
+        if min_in_hour <= 20:
             step = hours_past * 2
-        elif min_in_hour <= 49:
+        elif min_in_hour <= 44:
             step = hours_past * 2 + 1
         else:
             step = hours_past * 2 + 2
@@ -629,6 +652,117 @@ def calc_factory_worked_hours(g_saat_str: str, c_saat_str: str, sure_str: str = 
     """Geriye dönük uyumluluk: (total_hours, overtime_hours) tuple'ı döndürür."""
     res = calculate_shift_hours(g_saat_str, c_saat_str)
     return res.total_hours, res.overtime_hours
+
+def extract_valid_intervals(rows: List[Dict[str, str]]) -> List[Tuple[str, str]]:
+    """
+    PDKS gün içerisindeki hareketlerinden geçerli çalışma aralıklarını (parçalı çalışma oturumlarını) ayıklar.
+    - Peş peşe basılan anlık turnike çift basımları (<= 5 dk) tekil giriş veya çıkışa indirgenir.
+    - Gün içindeki gerçek giriş-çıkış aralıkları (örn: 08:00-10:00 ve 14:00-15:00) bağımsız oturumlar olarak korunur.
+    """
+    intervals = []
+    orphan_g = []
+    orphan_c = []
+    
+    for r in rows:
+        g = r.get("g_saat", "")
+        c = r.get("c_saat", "")
+        if g and c:
+            ghm, chm = parse_hm(g), parse_hm(c)
+            if ghm and chm:
+                gm = ghm[0] * 60 + ghm[1]
+                cm = chm[0] * 60 + chm[1]
+                if cm < gm:
+                    cm += 24 * 60
+                # <= 5 dk anlık turnike çift basımı (girişte veya çıkışta mükerrer basım)
+                if cm - gm <= 5:
+                    if gm < 12 * 60:
+                        orphan_g.append(g)
+                    else:
+                        orphan_c.append(c)
+                else:
+                    intervals.append((g, c))
+                continue
+        if g:
+            orphan_g.append(g)
+        if c:
+            orphan_c.append(c)
+            
+    # Hiç interval yoksa ama orphan giriş ve çıkış varsa eşleştir
+    if not intervals and orphan_g and orphan_c:
+        intervals.append((orphan_g[0], orphan_c[-1]))
+    elif intervals and (orphan_g or orphan_c):
+        new_intervals = []
+        for i, (ig, ic) in enumerate(intervals):
+            curr_g, curr_c = ig, ic
+            if i == 0 and orphan_g:
+                og_hm = parse_hm(orphan_g[0])
+                ig_hm = parse_hm(ig)
+                if og_hm and ig_hm:
+                    og_m = og_hm[0] * 60 + og_hm[1]
+                    ig_m = ig_hm[0] * 60 + ig_hm[1]
+                    if og_m < ig_m and (ig_m - og_m) <= 90:
+                        curr_g = orphan_g[0]
+            if i == len(intervals) - 1 and orphan_c:
+                oc_hm = parse_hm(orphan_c[-1])
+                ic_hm = parse_hm(ic)
+                if oc_hm and ic_hm:
+                    oc_m = oc_hm[0] * 60 + oc_hm[1]
+                    ic_m = ic_hm[0] * 60 + ic_hm[1]
+                    if oc_m > ic_m and (oc_m - ic_m) <= 90:
+                        curr_c = orphan_c[-1]
+            new_intervals.append((curr_g, curr_c))
+        intervals = new_intervals
+
+    return intervals
+
+def calculate_multiple_shifts(intervals: List[Tuple[str, str]]) -> ShiftResult:
+    """
+    Gün içerisinde birden fazla giriş-çıkış (parçalı çalışma) olduğunda
+    her aralığın net çalışma süresini hesaplayıp toplar.
+    
+    Örnek:
+    - 08:00 - 10:00 (2 saat) ve 14:00 - 15:00 (1 saat) -> Toplam 3.0 saat.
+    - 14 saat brüt çalışma -> 1.5 saat yemek/ara dinlenme kesilerek 12.5 saat net.
+    """
+    if not intervals:
+        return ShiftResult(0.0, 0.0, 0.0, 0.0, "-", "-", 0.0)
+    if len(intervals) == 1:
+        return calculate_shift_hours(intervals[0][0], intervals[0][1])
+        
+    tot_net = 0.0
+    tot_gross = 0.0
+    tot_brk = 0.0
+    first_g = intervals[0][0]
+    last_c = intervals[-1][1]
+    
+    for g_str, c_str in intervals:
+        if not g_str or not c_str:
+            continue
+        s_res = calculate_shift_hours(g_str, c_str)
+        tot_net += s_res.total_hours
+        tot_gross += s_res.gross_hours
+        tot_brk += s_res.break_hours
+        
+    # Eğer toplam brüt çalışma 11.5 saat veya üzerindeyse (örn. 12 saat -> 10.5, 14 saat -> 12.5):
+    # En az 1.5 saat yemek/dinlenme kesintisi uygulanır
+    if tot_gross >= 11.5:
+        max_allowed = max(0.0, tot_gross - 1.5)
+        if tot_net > max_allowed:
+            tot_brk += (tot_net - max_allowed)
+            tot_net = max_allowed
+            
+    base_h = min(7.5, tot_net)
+    ot_h = max(0.0, tot_net - 7.5)
+    
+    return ShiftResult(
+        total_hours=round(tot_net, 2),
+        base_hours=round(base_h, 2),
+        overtime_hours=round(ot_h, 2),
+        break_hours=round(tot_brk, 2),
+        effective_g=first_g[:5],
+        effective_c=last_c[:5],
+        gross_hours=round(tot_gross, 2)
+    )
 
 def repair_turnstile_anomalies(rows: List[Dict[str, str]]) -> Tuple[List[Dict[str, str]], bool, str]:
     """
@@ -967,7 +1101,8 @@ class PDKSEngine:
             c_saat = get_val(r, "c_saat")
             sure_val = get_val(r, "sure")
             p_tarih = get_val(r, "puantaj_tarih")
-            target_date = p_tarih if p_tarih else (g_tarih if g_tarih else c_tarih)
+            # Fiziksel giriş tarihi (g_tarih) çalışanın turnikeden fiilen geçtiği gerçek gündür
+            target_date = g_tarih if g_tarih else (p_tarih if p_tarih else c_tarih)
             gun_adi = get_val(r, "gun_adi") or (get_day_name(target_date) if target_date else "")
 
             # Personel listesinde yoksa ekle
@@ -1161,32 +1296,44 @@ class PDKSEngine:
             if len(rows) == 1 and rows[0]["g_saat"] and rows[0]["c_saat"]:
                 g_raw = rows[0]["g_saat"]
                 c_raw = rows[0]["c_saat"]
-                excel_sure = rows[0].get("sure", "")
                 s_res = calculate_shift_hours(g_raw, c_raw)
                 tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
                 eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                 fiili_sure = tot_h
-                
-                if excel_sure:
-                    hm = parse_hm(excel_sure)
-                    if hm:
-                        excel_tot_h = hm[0] + hm[1] / 60.0
-                        if abs(excel_tot_h - tot_h) > 0.05:
-                            audit_note += f" [Hesaplanan Süre: {fmt_hours_tr(tot_h)}s | Excel Süre Sütunu: {excel_sure} -> Excel baz alındı.] "
-                            tot_h = excel_tot_h
-                            fiili_sure = tot_h
-                            ot_h = max(0.0, tot_h - 7.5)
-                            base_h = min(7.5, tot_h)
-                            
                 raw_g_str = g_raw[:5]
                 raw_c_str = c_raw[:5]
                 
-            # 2. DURUM: Çoklu Basım (Birden fazla satır)
+            # 2. DURUM: Çoklu Basım (Birden fazla satır / Parçalı Çalışma)
             elif len(rows) > 1:
+                intervals = extract_valid_intervals(rows)
                 g_list = [r["g_saat"] for r in rows if r["g_saat"]]
                 c_list = [r["c_saat"] for r in rows if r["c_saat"]]
                 
-                if g_list and c_list:
+                if len(intervals) > 1:
+                    s_res = calculate_multiple_shifts(intervals)
+                    tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                    eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
+                    fiili_sure = tot_h
+                    raw_g_str = intervals[0][0][:5]
+                    raw_c_str = intervals[-1][1][:5]
+                    status_type = "PARÇALI_ÇALIŞMA"
+                    is_exception = True
+                    int_str = ", ".join(f"{ig[:5]}-{ic[:5]}" for ig, ic in intervals)
+                    audit_note = f"Parçalı Çalışma: {len(intervals)} oturum ({int_str}) -> Toplam {fmt_hours_tr(tot_h)}s"
+                elif len(intervals) == 1:
+                    g_raw = intervals[0][0]
+                    c_raw = intervals[0][1]
+                    raw_g_str = g_raw[:5]
+                    raw_c_str = c_raw[:5]
+                    s_res = calculate_shift_hours(g_raw, c_raw)
+                    tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                    eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
+                    fiili_sure = tot_h
+                    if len(all_punches) > 2:
+                        status_type = "ÇOKLU_BASIM_MIN_MAX"
+                        is_exception = True
+                        audit_note = f"Çoklu Basım: İlk Giriş {raw_g_str}, Son Çıkış {raw_c_str} ({fmt_hours_tr(tot_h)}s)"
+                elif g_list and c_list:
                     g_raw = g_list[0]
                     c_raw = c_list[-1]
                     raw_g_str = g_raw[:5]
@@ -1195,26 +1342,9 @@ class PDKSEngine:
                     tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
                     eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
                     fiili_sure = tot_h
-                    
-                    # Çoklu basımda, satırlardan birinde süre varsa toplayalım veya karşılaştıralım
-                    total_excel_sure = 0.0
-                    for r_sub in rows:
-                        sub_sure = r_sub.get("sure", "")
-                        if sub_sure:
-                            hm = parse_hm(sub_sure)
-                            if hm: total_excel_sure += hm[0] + hm[1] / 60.0
-                    
-                    if total_excel_sure > 0 and abs(total_excel_sure - tot_h) > 0.05:
-                        audit_note += f" [Hesaplanan Süre: {fmt_hours_tr(tot_h)}s | Excel Çoklu Süre Toplamı: {fmt_hours_tr(total_excel_sure)}s -> Excel baz alındı.] "
-                        tot_h = total_excel_sure
-                        fiili_sure = tot_h
-                        ot_h = max(0.0, tot_h - 7.5)
-                        base_h = min(7.5, tot_h)
-                        
-                    if len(all_punches) > 2:
-                        status_type = "ÇOKLU_BASIM_MIN_MAX"
-                        is_exception = True
-                        audit_note = f"Çoklu Basım: İlk Giriş {raw_g_str}, Son Çıkış {raw_c_str} ({fmt_hours_tr(tot_h)}s)"
+                    status_type = "ÇOKLU_BASIM_MIN_MAX"
+                    is_exception = True
+                    audit_note = f"Çoklu Basım: İlk Giriş {raw_g_str}, Son Çıkış {raw_c_str} ({fmt_hours_tr(tot_h)}s)"
                 elif g_list:
                     g_raw = g_list[0]
                     raw_g_str = g_raw[:5]
@@ -1223,22 +1353,24 @@ class PDKSEngine:
                     tm = hm[0] * 60 + hm[1] if hm else 480
                     is_exception = True
                     
-                    if tm <= 12 * 60 + 30:
-                        status_type = "ÇIKIŞ_YOK_SABAH"
-                        tot_h, base_h, ot_h, brk_h = 7.5, 7.5, 0.0, 1.5
-                        eff_g, eff_c, gross_h = raw_g_str, "17:00", 7.5
-                        audit_note = f"Giriş: {raw_g_str} | Çıkış Basılmadı (Tam Gün 7,5s yazıldı)"
-                    elif 12 * 60 + 30 < tm < 20 * 60:
-                        status_type = "GİRİŞ_YOK_AKŞAM"
-                        s_res = calculate_shift_hours("08:00", g_raw)
-                        tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
-                        eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
-                        audit_note = f"Çıkış: {raw_g_str} | Giriş Basılmadı (08:00 başı ile {fmt_hours_tr(tot_h)}s korundu)"
-                    else:
-                        status_type = "GECE_TEK_BASIM"
-                        tot_h, base_h, ot_h, brk_h = 7.5, 7.5, 0.0, 0.5
-                        eff_g, eff_c, gross_h = raw_g_str, "08:00", 7.5
-                        audit_note = f"Gece Girişi: {raw_g_str} | Çıkış Basılmadı (7,5s yazıldı)"
+                    status_type = "ÇIKIŞ_YOK"
+                    tot_h, base_h, ot_h = 7.5, 7.5, 0.0
+                    brk_h = 1.5 if tm <= 16 * 60 else 0.5
+                    eff_g = raw_g_str
+                    eff_c = "17:00" if tm <= 12 * 60 + 30 else ("24:00" if tm < 18 * 60 + 30 else "04:00")
+                    gross_h = 7.5
+                    audit_note = f"Giriş: {raw_g_str} | Çıkış Basılmadı (Girişi var -> 7,5s hak ediş yazıldı - İstisna Onayı Bekliyor)"
+                    fiili_sure = tot_h
+                elif c_list:
+                    c_raw = c_list[-1]
+                    raw_g_str = "-"
+                    raw_c_str = c_raw[:5]
+                    is_exception = True
+                    status_type = "GİRİŞ_YOK_AKŞAM"
+                    s_res = calculate_shift_hours("08:00", c_raw)
+                    tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
+                    eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
+                    audit_note = f"Çıkış: {raw_c_str} | Giriş Basılmadı (08:00 başı ile {fmt_hours_tr(tot_h)}s korundu - İstisna Onayı Bekliyor)"
                     fiili_sure = tot_h
                 else:
                     tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h, fiili_sure = 0.0, 0.0, 0.0, 0.0, "-", "-", 0.0, 0.0
@@ -1247,38 +1379,60 @@ class PDKSEngine:
             # 3. DURUM: Tek Satır, Tek Basım (Eksik Basım)
             elif len(rows) == 1:
                 r_s = rows[0]
-                t_raw = r_s["g_saat"] if r_s["g_saat"] else r_s["c_saat"]
-                hm = parse_hm(t_raw)
-                tm = hm[0] * 60 + hm[1] if hm else 480
-                t_s = t_raw[:5] if len(t_raw) >= 5 else t_raw
+                has_entry = bool(r_s.get("g_saat"))
+                has_exit = bool(r_s.get("c_saat"))
                 is_exception = True
                 
-                if tm <= 12 * 60 + 30:
-                    raw_g_str = t_s
+                if has_entry:
+                    g_raw = r_s["g_saat"]
+                    raw_g_str = g_raw[:5]
                     raw_c_str = "-"
-                    status_type = "ÇIKIŞ_YOK_SABAH"
-                    tot_h, base_h, ot_h, brk_h = 7.5, 7.5, 0.0, 1.5
-                    eff_g, eff_c, gross_h = t_s, "17:00", 7.5
-                    audit_note = f"Giriş: {t_s} | Çıkış Basılmadı (Tam Gün 7,5s yazıldı)"
-                elif 12 * 60 + 30 < tm < 20 * 60:
+                    hm = parse_hm(g_raw)
+                    tm = hm[0] * 60 + hm[1] if hm else 480
+                    status_type = "ÇIKIŞ_YOK"
+                    tot_h, base_h, ot_h = 7.5, 7.5, 0.0
+                    brk_h = 1.5 if tm <= 16 * 60 else 0.5
+                    eff_g = raw_g_str
+                    eff_c = "17:00" if tm <= 12 * 60 + 30 else ("24:00" if tm < 18 * 60 + 30 else "04:00")
+                    gross_h = 7.5
+                    audit_note = f"Giriş: {raw_g_str} | Çıkış Basılmadı (Girişi var -> 7,5s hak ediş yazıldı - İstisna Onayı Bekliyor)"
+                    fiili_sure = tot_h
+                elif has_exit:
+                    c_raw = r_s["c_saat"]
                     raw_g_str = "-"
-                    raw_c_str = t_s
+                    raw_c_str = c_raw[:5]
                     status_type = "GİRİŞ_YOK_AKŞAM"
-                    s_res = calculate_shift_hours("08:00", t_raw)
+                    s_res = calculate_shift_hours("08:00", c_raw)
                     tot_h, base_h, ot_h, brk_h = s_res.total_hours, s_res.base_hours, s_res.overtime_hours, s_res.break_hours
                     eff_g, eff_c, gross_h = s_res.effective_g, s_res.effective_c, s_res.gross_hours
-                    audit_note = f"Çıkış: {t_s} | Giriş Basılmadı (08:00 başı ile {fmt_hours_tr(tot_h)}s korundu)"
+                    audit_note = f"Çıkış: {raw_c_str} | Giriş Basılmadı (08:00 başı ile {fmt_hours_tr(tot_h)}s korundu - İstisna Onayı Bekliyor)"
+                    fiili_sure = tot_h
                 else:
-                    raw_g_str = t_s
-                    raw_c_str = "-"
-                    status_type = "GECE_TEK_BASIM"
-                    tot_h, base_h, ot_h, brk_h = 7.5, 7.5, 0.0, 0.5
-                    eff_g, eff_c, gross_h = t_s, "08:00", 7.5
-                    audit_note = f"Gece Basımı: {t_s} | Tek Basım (7,5s yazıldı)"
+                    tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h, fiili_sure = 0.0, 0.0, 0.0, 0.0, "-", "-", 0.0, 0.0
+                    raw_g_str, raw_c_str = "-", "-"
+
+            # -----------------------------------------------------------------
+            # PDKS DOSYASI "SÜRE" KOLONU OKUMA VE DOĞRULAMA KONTROLÜ
+            # -----------------------------------------------------------------
+            pdks_sure_list = [r.get("sure", "") for r in rows if r.get("sure")]
+            pdks_sure_str = ", ".join(pdks_sure_list)
+            pdks_sure_total_h = 0.0
+            for s_val in pdks_sure_list:
+                hm_s = parse_hm(s_val)
+                if hm_s:
+                    pdks_sure_total_h += (hm_s[0] + hm_s[1] / 60.0)
+            pdks_sure_total_h = round(pdks_sure_total_h, 2)
+            
+            # Güvenlik Kontrolü: PDKS'de turnikenin bizzat hesapladığı ham süre varsa,
+            # hesaplanan brüt süre (gross_h) turnike mevcudiyet süresini aşamaz
+            if pdks_sure_total_h > 0.0 and gross_h > pdks_sure_total_h + 1.0:
+                sec_note = f"PDKS Süre Doğrulaması: Turnike brüt süresi ({fmt_hours_tr(pdks_sure_total_h)}s) tavan alındı"
+                audit_note = f"{audit_note} | {sec_note}" if audit_note else sec_note
+                gross_h = pdks_sure_total_h
+                tot_h = min(tot_h, max(0.0, gross_h - brk_h))
+                base_h = min(7.5, tot_h)
+                ot_h = max(0.0, tot_h - base_h)
                 fiili_sure = tot_h
-            else:
-                tot_h, base_h, ot_h, brk_h, eff_g, eff_c, gross_h, fiili_sure = 0.0, 0.0, 0.0, 0.0, "-", "-", 0.0, 0.0
-                raw_g_str, raw_c_str = "-", "-"
 
             # -----------------------------------------------------------------
             # ÖZEL BÖLÜM PRİMLERİ (Konfigürasyondan dinamik hesaplama):
@@ -1321,6 +1475,8 @@ class PDKSEngine:
                 "status_type": status_type,
                 "is_exception": is_exception,
                 "is_bonus": (bonus_hours > 0),
+                "pdks_sure": pdks_sure_str,
+                "pdks_sure_hours": pdks_sure_total_h,
                 "audit_note": audit_note
             }
             
@@ -2044,3 +2200,414 @@ class PDKSEngine:
             "consecutive_violations": consecutive_violations,
             "overtime_risks": overtime_risks
         }
+
+    def calculate_daily_department_attendance(self) -> Dict[str, Any]:
+        """
+        Patron ve Fabrika Yönetimi için:
+        Gün gün (1..days_in_month) hangi bölümde kaç personelin çalıştığını,
+        çalışma saatlerini, fazla mesai yoğunluğunu ve detaylı personel listesini hesaplar.
+        """
+        matrix = self.get_summary_matrix()
+        
+        # Tüm benzersiz bölümleri ve kayıtlı personel sayılarını topla
+        dept_assigned_count = defaultdict(int)
+        for p in self.personnel_list:
+            d_name = clean_str(p.get("bolum")) or "GENEL"
+            dept_assigned_count[d_name] += 1
+            
+        all_depts = sorted(list(dept_assigned_count.keys()))
+        
+        # Gün bazlı departman istatistikleri
+        daily_dept_counts = defaultdict(lambda: defaultdict(int))
+        daily_dept_hours = defaultdict(lambda: defaultdict(float))
+        daily_dept_ot = defaultdict(lambda: defaultdict(float))
+        daily_dept_workers = defaultdict(lambda: defaultdict(list))
+        
+        # Departman bazlı toplamlar
+        dept_total_man_days = defaultdict(int)
+        dept_total_hours = defaultdict(float)
+        dept_daily_counts = defaultdict(lambda: [0] * self.days_in_month)
+        dept_daily_hours = defaultdict(lambda: [0.0] * self.days_in_month)
+        
+        daily_totals = {}
+        
+        for m in matrix:
+            name_k = m["name_key"]
+            tc = m.get("tc", "")
+            ad_soyad = m.get("ad_soyad", "")
+            dept = clean_str(m.get("bolum")) or "GENEL"
+            
+            for d in range(1, self.days_in_month + 1):
+                rec = self.daily_results.get((name_k, d))
+                final_h = m["daily_hours"].get(d, 0.0)
+                if rec and final_h > 0:
+                    daily_dept_counts[d][dept] += 1
+                    daily_dept_hours[d][dept] += final_h
+                    ot_h = rec.get("overtime_hours", 0.0)
+                    daily_dept_ot[d][dept] += ot_h
+                    
+                    daily_dept_workers[d][dept].append({
+                        "name": ad_soyad,
+                        "tc": tc,
+                        "hours": final_h,
+                        "g_saat": rec.get("raw_g_saat", "-"),
+                        "c_saat": rec.get("raw_c_saat", "-"),
+                        "ot_hours": ot_h,
+                        "status_type": rec.get("status_type", "")
+                    })
+                    
+                    dept_total_man_days[dept] += 1
+                    dept_total_hours[dept] += final_h
+                    dept_daily_counts[dept][d - 1] += 1
+                    dept_daily_hours[dept][d - 1] = round(dept_daily_hours[dept][d - 1] + final_h, 1)
+
+        # Günlük özet listesi
+        days_list = []
+        factory_daily_workers = []
+        
+        for d in range(1, self.days_in_month + 1):
+            date_str = f"{d:02d}.{self.target_month:02d}.{self.target_year}"
+            day_name = self.get_day_name_for_day(d)
+            is_sun = (d in self.sundays)
+            
+            day_total_workers = sum(daily_dept_counts[d].values())
+            day_total_hours = round(sum(daily_dept_hours[d].values()), 1)
+            day_total_ot = round(sum(daily_dept_ot[d].values()), 1)
+            
+            factory_daily_workers.append(day_total_workers)
+            daily_totals[d] = day_total_workers
+            
+            # Bu gün çalışan departmanları sırala (en çok çalışan olandan aza)
+            dept_breakdown = []
+            for dept in all_depts:
+                cnt = daily_dept_counts[d][dept]
+                hrs = round(daily_dept_hours[d][dept], 1)
+                ot = round(daily_dept_ot[d][dept], 1)
+                pct = round((cnt / day_total_workers * 100), 1) if day_total_workers > 0 else 0.0
+                
+                dept_breakdown.append({
+                    "department": dept,
+                    "count": cnt,
+                    "hours": hrs,
+                    "ot_hours": ot,
+                    "percentage": pct,
+                    "workers": sorted(daily_dept_workers[d][dept], key=lambda x: x["name"])
+                })
+            
+            active_depts = [db for db in dept_breakdown if db["count"] > 0]
+            active_depts.sort(key=lambda x: x["count"], reverse=True)
+            
+            days_list.append({
+                "day": d,
+                "date": date_str,
+                "day_name": day_name,
+                "day_name_short": self.get_day_name_for_day(d, short=True),
+                "is_sunday": is_sun,
+                "total_workers": day_total_workers,
+                "total_hours": day_total_hours,
+                "total_ot_hours": day_total_ot,
+                "active_department_count": len(active_depts),
+                "dept_counts": {dept: daily_dept_counts[d][dept] for dept in all_depts},
+                "dept_hours": {dept: round(daily_dept_hours[d][dept], 1) for dept in all_depts},
+                "departments": active_depts,
+                "all_departments": dept_breakdown
+            })
+
+        # Departman Matrisi (Tüm ay boyunca her departmanın gün gün sayıları)
+        dept_matrix = []
+        for dept in all_depts:
+            counts = dept_daily_counts[dept]
+            hrs = dept_daily_hours[dept]
+            total_md = dept_total_man_days[dept]
+            tot_h = round(dept_total_hours[dept], 1)
+            
+            active_days = [c for c in counts if c > 0]
+            avg_workers = round(sum(active_days) / len(active_days), 1) if active_days else 0.0
+            peak_cnt = max(counts) if counts else 0
+            peak_d = (counts.index(peak_cnt) + 1) if peak_cnt > 0 else 0
+            
+            dept_matrix.append({
+                "department": dept,
+                "total_assigned": dept_assigned_count[dept],
+                "total_man_days": total_md,
+                "total_hours": tot_h,
+                "avg_workers_on_active_days": avg_workers,
+                "peak_workers": peak_cnt,
+                "peak_day": peak_d,
+                "active_days_count": len(active_days),
+                "daily_counts": counts,
+                "daily_hours": hrs
+            })
+            
+        dept_matrix.sort(key=lambda x: x["total_man_days"], reverse=True)
+        
+        # KPI Hesaplamaları
+        working_days_workers = [days_list[d-1]["total_workers"] for d in range(1, self.days_in_month + 1) if d not in self.sundays]
+        sunday_workers = [days_list[d-1]["total_workers"] for d in range(1, self.days_in_month + 1) if d in self.sundays]
+        
+        avg_working_day = round(sum(working_days_workers) / len(working_days_workers), 1) if working_days_workers else 0.0
+        avg_sunday = round(sum(sunday_workers) / len(sunday_workers), 1) if sunday_workers else 0.0
+        
+        peak_day_obj = max(days_list, key=lambda x: x["total_workers"]) if days_list else None
+        
+        non_zero_days = [d for d in days_list if not d["is_sunday"] and d["total_workers"] > 0]
+        lowest_day_obj = min(non_zero_days, key=lambda x: x["total_workers"]) if non_zero_days else (min(days_list, key=lambda x: x["total_workers"]) if days_list else None)
+        
+        busiest_dept_obj = dept_matrix[0] if dept_matrix else None
+        
+        kpis = {
+            "total_departments": len(all_depts),
+            "active_departments_count": sum(1 for dm in dept_matrix if dm["total_man_days"] > 0),
+            "total_factory_personnel": len(self.personnel_list),
+            "active_personnel_monthly": sum(1 for m in matrix if m["total_work_days"] > 0),
+            "total_man_days": sum(dept_total_man_days.values()),
+            "avg_daily_working_day_workers": avg_working_day,
+            "avg_sunday_workers": avg_sunday,
+            "peak_day": {
+                "day": peak_day_obj["day"] if peak_day_obj else 0,
+                "date": peak_day_obj["date"] if peak_day_obj else "",
+                "day_name": peak_day_obj["day_name"] if peak_day_obj else "",
+                "workers": peak_day_obj["total_workers"] if peak_day_obj else 0
+            },
+            "lowest_day": {
+                "day": lowest_day_obj["day"] if lowest_day_obj else 0,
+                "date": lowest_day_obj["date"] if lowest_day_obj else "",
+                "day_name": lowest_day_obj["day_name"] if lowest_day_obj else "",
+                "workers": lowest_day_obj["total_workers"] if lowest_day_obj else 0
+            },
+            "busiest_department": {
+                "department": busiest_dept_obj["department"] if busiest_dept_obj else "",
+                "total_man_days": busiest_dept_obj["total_man_days"] if busiest_dept_obj else 0,
+                "peak_workers": busiest_dept_obj["peak_workers"] if busiest_dept_obj else 0,
+                "avg_workers": busiest_dept_obj["avg_workers_on_active_days"] if busiest_dept_obj else 0.0
+            }
+        }
+        
+        return {
+            "month": self.target_month,
+            "year": self.target_year,
+            "days_in_month": self.days_in_month,
+            "sundays": sorted(list(self.sundays)),
+            "all_departments": all_depts,
+            "kpis": kpis,
+            "days": days_list,
+            "department_matrix": dept_matrix,
+            "daily_totals": daily_totals
+        }
+
+    def calculate_shuttle_logistics(self, day: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Personel ikametgah verilerine ve günlük mesai giriş-çıkış hareketlerine göre
+        servis güzergahı yolcu doluluk, araç tahsis ve lojistik optimizasyon analizini üretir.
+        """
+        import math
+        shuttle_cfg = self.rules.get("shuttle_settings", {})
+        routes_def = shuttle_cfg.get("routes", [
+            { "route_id": "bergama", "name": "Bergama Merkez & Mahalleleri", "keywords": ["BERGAMA", "MERKEZ", "ZAFER", "İSTİKLAL", "FATİH", "MALTEPE"] },
+            { "route_id": "dikili", "name": "Dikili & Çandarlı Hattı", "keywords": ["DİKİLİ", "ÇANDARLI", "KABAKUM", "SALİHLER"] },
+            { "route_id": "kinik", "name": "Kınık & Poyracık Hattı", "keywords": ["KINIK", "POYRACIK", "YAYAKENT"] },
+            { "route_id": "ayvalik", "name": "Ayvalık & Altınova Hattı", "keywords": ["AYVALIK", "ALTINOVA", "KÜÇÜKKÖY", "SARIMSAKLI"] },
+            { "route_id": "soma", "name": "Soma Hattı", "keywords": ["SOMA"] },
+            { "route_id": "diger", "name": "Diğer / Fabrika Çevresi", "keywords": ["FABRİKA", "KÖY", "YEREL"] }
+        ])
+
+        def resolve_route(ikamet_str: str) -> Dict[str, Any]:
+            cleaned = (ikamet_str or "").strip().upper()
+            for r in routes_def:
+                for kw in r.get("keywords", []):
+                    if kw.upper() in cleaned:
+                        return r
+            return routes_def[-1] if routes_def else {"route_id": "diger", "name": "Diğer / Fabrika Çevresi"}
+
+        def recommend_vehicle(count: int) -> Dict[str, Any]:
+            if count == 0:
+                return {"type": "Yok", "capacity": 0, "vehicles": 0, "occupancy_rate": 0.0, "description": "Servis gerekmiyor"}
+            elif count <= 16:
+                cap = 16
+                return {"type": "Minibüs (16 Kişilik)", "capacity": cap, "vehicles": 1, "occupancy_rate": round((count / cap) * 100, 1), "description": "1 x Minibüs (16 Kişilik)"}
+            elif count <= 27:
+                cap = 27
+                return {"type": "Midibüs (27 Kişilik)", "capacity": cap, "vehicles": 1, "occupancy_rate": round((count / cap) * 100, 1), "description": "1 x Midibüs (27 Kişilik)"}
+            elif count <= 32:
+                cap = 32
+                return {"type": "Minibüs (2x 16 Kişilik)", "capacity": cap, "vehicles": 2, "occupancy_rate": round((count / cap) * 100, 1), "description": "2 x Minibüs (32 Kişilik)"}
+            elif count <= 45:
+                cap = 45
+                return {"type": "Otobüs (45 Kişilik)", "capacity": cap, "vehicles": 1, "occupancy_rate": round((count / cap) * 100, 1), "description": "1 x Otobüs (45 Kişilik)"}
+            elif count <= 54:
+                cap = 54
+                return {"type": "Midibüs (2x 27 Kişilik)", "capacity": cap, "vehicles": 2, "occupancy_rate": round((count / cap) * 100, 1), "description": "2 x Midibüs (54 Kişilik)"}
+            else:
+                vehs = math.ceil(count / 27)
+                cap = vehs * 27
+                return {"type": f"{vehs} x Midibüs", "capacity": cap, "vehicles": vehs, "occupancy_rate": round((count / cap) * 100, 1), "description": f"{vehs} x Midibüs ({cap} Koltuk)"}
+
+        # Personel rota haritalaması
+        personnel_route_map = {}
+        route_assigned_counts = {r["route_id"]: 0 for r in routes_def}
+        for p in self.personnel_list:
+            nk = p["name_key"]
+            ikamet = p.get("ikamet", "")
+            r_info = resolve_route(ikamet)
+            personnel_route_map[nk] = {
+                "route_id": r_info["route_id"],
+                "route_name": r_info["name"],
+                "ikamet": ikamet
+            }
+            route_assigned_counts[r_info["route_id"]] += 1
+
+        # Günlük servis yolcu hareketleri
+        days_data = []
+        route_daily_riders = {r["route_id"]: [0] * self.days_in_month for r in routes_def}
+
+        for d in range(1, self.days_in_month + 1):
+            date_str = f"{self.target_year}-{self.target_month:02d}-{d:02d}"
+            try:
+                dt_obj = datetime(self.target_year, self.target_month, d)
+                day_name = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"][dt_obj.weekday()]
+            except Exception:
+                day_name = ""
+
+            route_passengers = {r["route_id"]: [] for r in routes_def}
+            shift_counts = {"V1": 0, "V2": 0, "V3": 0}
+
+            for p in self.personnel_list:
+                nk = p["name_key"]
+                rec = self.daily_results.get((nk, d))
+                hours = rec.get("final_hours", 0.0) if rec else 0.0
+                raw_g = rec.get("raw_g_saat", "-") if rec else "-"
+                raw_c = rec.get("raw_c_saat", "-") if rec else "-"
+
+                if hours > 0 or raw_g != "-":
+                    r_meta = personnel_route_map.get(nk, {"route_id": "diger", "route_name": "Diğer", "ikamet": ""})
+                    rid = r_meta["route_id"]
+
+                    entry_time = raw_g if raw_g != "-" else ""
+                    exit_time = raw_c if raw_c != "-" else ""
+
+                    shift_code = "V1"
+                    if entry_time:
+                        try:
+                            parts = entry_time.split(":")
+                            h_val = int(parts[0])
+                            if 6 <= h_val < 14:
+                                shift_code = "V1"
+                            elif 14 <= h_val < 22:
+                                shift_code = "V2"
+                            else:
+                                shift_code = "V3"
+                        except Exception:
+                            shift_code = "V1"
+
+                    shift_counts[shift_code] = shift_counts.get(shift_code, 0) + 1
+
+                    route_passengers[rid].append({
+                        "tc": p.get("tc", ""),
+                        "name_key": nk,
+                        "ad_soyad": p.get("ad_soyad", ""),
+                        "bolum": p.get("bolum", ""),
+                        "ikamet": r_meta["ikamet"],
+                        "entry_time": entry_time,
+                        "exit_time": exit_time,
+                        "hours": round(hours, 1),
+                        "shift_code": shift_code
+                    })
+
+            day_routes = []
+            day_total_riders = 0
+            day_total_vehicles = 0
+
+            for r in routes_def:
+                rid = r["route_id"]
+                pax = route_passengers[rid]
+                cnt = len(pax)
+                day_total_riders += cnt
+                route_daily_riders[rid][d - 1] = cnt
+                v_rec = recommend_vehicle(cnt)
+                day_total_vehicles += v_rec["vehicles"]
+
+                v1_cnt = sum(1 for px in pax if px["shift_code"] == "V1")
+                v2_cnt = sum(1 for px in pax if px["shift_code"] == "V2")
+                v3_cnt = sum(1 for px in pax if px["shift_code"] == "V3")
+
+                day_routes.append({
+                    "route_id": rid,
+                    "route_name": r["name"],
+                    "passenger_count": cnt,
+                    "v1_count": v1_cnt,
+                    "v2_count": v2_cnt,
+                    "v3_count": v3_cnt,
+                    "vehicle": v_rec,
+                    "passengers": sorted(pax, key=lambda x: x["ad_soyad"])
+                })
+
+            days_data.append({
+                "day": d,
+                "date": date_str,
+                "day_name": day_name,
+                "is_sunday": d in self.sundays,
+                "total_passengers": day_total_riders,
+                "total_vehicles": day_total_vehicles,
+                "shifts": shift_counts,
+                "routes": day_routes
+            })
+
+        routes_summary = []
+        for r in routes_def:
+            rid = r["route_id"]
+            counts = route_daily_riders[rid]
+            active_counts = [c for c in counts if c > 0]
+            avg_pax = round(sum(active_counts) / len(active_counts), 1) if active_counts else 0.0
+            peak_pax = max(counts) if counts else 0
+            peak_day = (counts.index(peak_pax) + 1) if peak_pax > 0 else 0
+            total_trips = sum(counts)
+            avg_vehicle = recommend_vehicle(int(round(avg_pax)))
+
+            routes_summary.append({
+                "route_id": rid,
+                "route_name": r["name"],
+                "assigned_personnel": route_assigned_counts[rid],
+                "total_passenger_trips": total_trips,
+                "avg_daily_passengers": avg_pax,
+                "peak_passengers": peak_pax,
+                "peak_day": peak_day,
+                "typical_vehicle": avg_vehicle,
+                "daily_counts": counts
+            })
+
+        working_days_pax = [days_data[d-1]["total_passengers"] for d in range(1, self.days_in_month + 1) if d not in self.sundays]
+        sunday_pax = [days_data[d-1]["total_passengers"] for d in range(1, self.days_in_month + 1) if d in self.sundays]
+        total_pax_trips = sum(d["total_passengers"] for d in days_data)
+        peak_shuttle_day = max(days_data, key=lambda x: x["total_passengers"]) if days_data else None
+
+        kpis = {
+            "total_routes": len(routes_def),
+            "total_assigned_personnel": len(self.personnel_list),
+            "total_passenger_trips": total_pax_trips,
+            "avg_working_day_passengers": round(sum(working_days_pax) / len(working_days_pax), 1) if working_days_pax else 0.0,
+            "avg_sunday_passengers": round(sum(sunday_pax) / len(sunday_pax), 1) if sunday_pax else 0.0,
+            "peak_day": {
+                "day": peak_shuttle_day["day"] if peak_shuttle_day else 0,
+                "date": peak_shuttle_day["date"] if peak_shuttle_day else "",
+                "passengers": peak_shuttle_day["total_passengers"] if peak_shuttle_day else 0,
+                "vehicles": peak_shuttle_day["total_vehicles"] if peak_shuttle_day else 0
+            },
+            "busiest_route": max(routes_summary, key=lambda x: x["total_passenger_trips"])["route_name"] if routes_summary else ""
+        }
+
+        filtered_days = days_data
+        if day is not None and 1 <= day <= self.days_in_month:
+            filtered_days = [days_data[day - 1]]
+
+        return {
+            "month": self.target_month,
+            "year": self.target_year,
+            "days_in_month": self.days_in_month,
+            "sundays": sorted(list(self.sundays)),
+            "kpis": kpis,
+            "routes_summary": routes_summary,
+            "days": filtered_days,
+            "selected_day": day
+        }
+
+

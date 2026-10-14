@@ -5,7 +5,7 @@ Vardiya ve Fazla Mesai Hesaplama Motoru Birim Testleri
 """
 
 import pytest
-from pdks_engine import calculate_shift_hours, calc_factory_worked_hours
+from pdks_engine import calculate_shift_hours, calc_factory_worked_hours, calculate_multiple_shifts
 
 class TestDayShiftStandard:
     def test_standard_full_day(self):
@@ -86,46 +86,74 @@ class TestEightFourShift:
 
 class TestStepwiseOvertime:
     def test_ot_grace_period(self):
-        """17:00 - 17:25 arası çıkış: Fazla mesai yok (7.5 saat)."""
-        res = calculate_shift_hours("08:00", "17:25")
+        """17:00 - 17:20 arası çıkış: Fazla mesai yok (7.5 saat)."""
+        res = calculate_shift_hours("08:00", "17:20")
         assert res.total_hours == 7.5
         assert res.overtime_hours == 0.0
 
     def test_ot_step_1(self):
-        """17:26 çıkışı: 26 dk FM -> +0.5 saat FM (Toplam 8.0 saat)."""
-        res = calculate_shift_hours("08:00", "17:26")
+        """17:21 çıkışı: 21 dk FM -> +0.5 saat FM (Toplam 8.0 saat)."""
+        res = calculate_shift_hours("08:00", "17:21")
         assert res.total_hours == 8.0
         assert res.overtime_hours == 0.5
 
     def test_ot_step_1_edge(self):
-        """17:49 çıkışı: 49 dk FM -> +0.5 saat FM (Toplam 8.0 saat)."""
-        res = calculate_shift_hours("08:00", "17:49")
+        """17:44 çıkışı: 44 dk FM -> +0.5 saat FM (Toplam 8.0 saat)."""
+        res = calculate_shift_hours("08:00", "17:44")
         assert res.total_hours == 8.0
         assert res.overtime_hours == 0.5
 
     def test_ot_step_2(self):
-        """17:50 çıkışı: 50 dk FM -> +1.0 saat FM (Toplam 8.5 saat)."""
-        res = calculate_shift_hours("08:00", "17:50")
+        """17:45 çıkışı: 45 dk FM -> +1.0 saat FM (Toplam 8.5 saat)."""
+        res = calculate_shift_hours("08:00", "17:45")
         assert res.total_hours == 8.5
         assert res.overtime_hours == 1.0
 
     def test_ot_step_2_edge(self):
-        """18:25 çıkışı: 85 dk FM -> +1.0 saat FM (Toplam 8.5 saat)."""
-        res = calculate_shift_hours("08:00", "18:25")
+        """18:20 çıkışı: 80 dk FM -> +1.0 saat FM (Toplam 8.5 saat)."""
+        res = calculate_shift_hours("08:00", "18:20")
         assert res.total_hours == 8.5
         assert res.overtime_hours == 1.0
 
     def test_ot_step_3(self):
-        """18:26 çıkışı: 86 dk FM -> +1.5 saat FM (Toplam 9.0 saat)."""
-        res = calculate_shift_hours("08:00", "18:26")
+        """18:21 çıkışı: 81 dk FM -> +1.5 saat FM (Toplam 9.0 saat)."""
+        res = calculate_shift_hours("08:00", "18:21")
+        assert res.total_hours == 9.0
+        assert res.overtime_hours == 1.5
+
+    def test_ot_step_3_edge(self):
+        """18:44 çıkışı: 104 dk FM -> +1.5 saat FM (Toplam 9.0 saat)."""
+        res = calculate_shift_hours("08:00", "18:44")
         assert res.total_hours == 9.0
         assert res.overtime_hours == 1.5
 
     def test_ot_step_4(self):
-        """18:50 çıkışı: 110 dk FM -> +2.0 saat FM (Toplam 9.5 saat)."""
-        res = calculate_shift_hours("08:00", "18:50")
+        """18:45 çıkışı: 105 dk FM -> +2.0 saat FM (Toplam 9.5 saat)."""
+        res = calculate_shift_hours("08:00", "18:45")
         assert res.total_hours == 9.5
         assert res.overtime_hours == 2.0
+
+    def test_evening_shift_overtime(self):
+        """16:00-24:00 Akşam vardiyasında 00:21 çıkışı 0.5 saat, 00:45 çıkışı 1.0 saat FM."""
+        res_grace = calculate_shift_hours("16:00", "00:20")
+        assert res_grace.overtime_hours == 0.0
+        res_half = calculate_shift_hours("16:00", "00:21")
+        assert res_half.overtime_hours == 0.5
+        res_full = calculate_shift_hours("16:00", "00:45")
+        assert res_full.overtime_hours == 1.0
+
+    def test_night_shift_overtime(self):
+        """20:00-04:00 Gece vardiyasında 04:21 çıkışı 0.5 saat, 04:45 çıkışı 1.0 saat FM, 08:00 (12 saat çalışma) çıkışı 3.0 saat FM ve 10.5 saat toplam."""
+        res_grace = calculate_shift_hours("20:00", "04:20")
+        assert res_grace.overtime_hours == 0.0
+        res_half = calculate_shift_hours("20:00", "04:21")
+        assert res_half.overtime_hours == 0.5
+        res_full = calculate_shift_hours("20:00", "04:45")
+        assert res_full.overtime_hours == 1.0
+        res_12h = calculate_shift_hours("20:00", "08:00")
+        assert res_12h.overtime_hours == 3.0
+        assert res_12h.total_hours == 10.5
+        assert res_12h.break_hours == 1.5
 
 
 class TestOtherShiftsAndEdges:
@@ -149,3 +177,47 @@ class TestOtherShiftsAndEdges:
         tot, fm = calc_factory_worked_hours("08:00", "18:26")
         assert tot == 9.0
         assert fm == 1.5
+
+
+class TestMultipleShiftsAndShortWork:
+    def test_split_shifts_user_case(self):
+        """08:00-10:00 (2 saat) ve 14:00-15:00 (1 saat) parçalı çalışma -> Toplam tam 3.0 saat."""
+        res = calculate_multiple_shifts([("08:00", "10:00"), ("14:00", "15:00")])
+        assert res.total_hours == 3.0
+        assert res.base_hours == 3.0
+        assert res.overtime_hours == 0.0
+        assert res.break_hours == 0.0
+
+    def test_split_shifts_with_lunch_break_outside(self):
+        """08:02-12:29 ve 13:04-19:07 (Ahmet Beyhan örneği): 9.5 saat toplam (7.5 temel + 2.0 FM)."""
+        res = calculate_multiple_shifts([("08:02", "12:29"), ("13:04", "19:07")])
+        assert res.total_hours == 9.5
+        assert res.base_hours == 7.5
+        assert res.overtime_hours == 2.0
+
+    def test_fourteen_hour_gross_work_day(self):
+        """08:00 - 22:00 (14 saat brüt çalışma): 1.5 saat mola kesilerek net 12.5 saat yazılır (7.5 temel + 5.0 FM)."""
+        res = calculate_shift_hours("08:00", "22:00")
+        assert res.total_hours == 12.5
+        assert res.base_hours == 7.5
+        assert res.overtime_hours == 5.0
+        assert res.break_hours == 1.5
+
+    def test_fourteen_hour_gross_work_night(self):
+        """20:00 - 10:00 (14 saat brüt gece çalışma): 1.5 saat mola kesilerek net 12.5 saat yazılır (7.5 temel + 5.0 FM)."""
+        res = calculate_shift_hours("20:00", "10:00")
+        assert res.total_hours == 12.5
+        assert res.base_hours == 7.5
+        assert res.overtime_hours == 5.0
+        assert res.break_hours == 1.5
+
+    def test_ercument_aygul_september_10(self):
+        """Ercüment Aygül 10.09.2026: 08:15 giriş - 15:49 çıkış (PDKS Süre 07:34) -> Net 6.5 saat (asla 19 saat olamaz!)."""
+        res = calculate_shift_hours("08:15", "15:49")
+        assert res.total_hours == 6.5
+        assert res.base_hours == 6.5
+        assert res.overtime_hours == 0.0
+        assert res.gross_hours == 7.57
+        assert res.break_hours == 1.5
+
+

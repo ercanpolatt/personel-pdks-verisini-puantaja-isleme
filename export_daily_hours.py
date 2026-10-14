@@ -471,13 +471,14 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
     if ws_default.title in wb.sheetnames:
         wb.remove(ws_default)
 
-    # Dosyayı kaydet (Açık olma durumunu yönet)
     saved_path = output_path
     try:
         wb.save(output_path)
     except PermissionError:
         saved_path = output_path.replace(".xlsx", "_guncel.xlsx")
         wb.save(saved_path)
+        print(f"\n   [DİKKAT] '{output_path}' dosyanız Excel'de açık olduğu için üzerine yazılamadı!")
+        print(f"   -> Güncel veriler '{saved_path}' dosyasına kaydedildi. Lütfen Excel'i kapatıp yenileyin.")
 
     return saved_path
 

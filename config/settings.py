@@ -49,7 +49,7 @@ DEFAULT_RULES = {
         "description": "20:00 - 08:00 Gece / 12 Saatlik Vardiya (04:00 sonrası fazla mesai)"
     },
     "overtime_policy": {
-        "grace_period_minutes": 25,
+        "grace_period_minutes": 20,
         "step_hours": 0.5
     },
     "department_bonuses": {},

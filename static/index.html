@@ -63,6 +63,16 @@
         <span>Saha El Terminali</span>
       </a>
 
+      <button class="btn btn-secondary" id="btnHeaderBriefing" onclick="openExecutiveBriefingModal()" title="Patron WhatsApp / Telegram İcra Brifingi Oluşturucu" style="font-weight: 600;">
+        <span>🌅</span>
+        <span>İcra Brifingi</span>
+      </button>
+
+      <button class="btn btn-secondary" id="btnHeaderBackup" onclick="openDatabaseBackupModal()" title="SQLite Arşiv Veritabanı Yedekleme ve Güvenlik Masası" style="font-weight: 600;">
+        <span>💾</span>
+        <span>DB Yedeği</span>
+      </button>
+
       <button class="btn btn-primary" id="btnHeaderGenerate">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10"/>
@@ -124,6 +134,39 @@
         </svg>
         <span>Maliyet & Bütçe Radarı</span>
         <span class="tab-pill pill-green" id="badgeFinancialOtCost">₺1.04M</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-boss-attendance" id="navTabBossAttendance">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span>Günlük Bölüm Mevcudu</span>
+        <span class="tab-pill pill-cyan" id="badgeBossDepts">28 Bölüm</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-shuttle" id="navTabShuttle">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="5" width="20" height="13" rx="2"/>
+          <path d="M4 18v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2"/>
+          <path d="M16 18v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2"/>
+          <circle cx="7" cy="14" r="1.5"/>
+          <circle cx="17" cy="14" r="1.5"/>
+          <path d="M2 10h20"/>
+        </svg>
+        <span>Servis & Güzergah Radarı</span>
+        <span class="tab-pill pill-purple" id="badgeShuttleRoutes">6 Hat</span>
+      </button>
+
+      <button class="nav-tab" role="tab" data-tab="tab-shift-planner" id="navTabShiftPlanner">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span>Vardiya & Sapma Radarı</span>
+        <span class="tab-pill pill-rose" id="badgeShiftDeviations">Sapma 0</span>
       </button>
 
       <button class="nav-tab" role="tab" data-tab="tab-compliance" id="navTabCompliance">
@@ -366,6 +409,22 @@
             <span>108 Yasal İhlal (11s Dinlenme, Hafta Tatili, 270s FM)</span>
           </div>
           <button class="btn btn-danger" onclick="switchTab('tab-compliance')">Uyum & Riskleri İncele</button>
+        </div>
+
+        <div class="action-tile" id="tileBossAttendanceJump" style="border-left: 3px solid var(--color-cyan);">
+          <div class="tile-icon" style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div class="tile-text">
+            <strong>👔 Patron Masası: Günlük Bölüm Mevcudu</strong>
+            <span>Gün gün hangi bölümde kaç kişi çalıştı? Isı haritası ve grafikler</span>
+          </div>
+          <button class="btn btn-primary" onclick="switchTab('tab-boss-attendance')">Bölüm Mevcudunu Aç</button>
         </div>
       </div>
 
@@ -1610,8 +1669,8 @@
                 </div>
                 <div class="form-group">
                   <label>Fazla Mesai Başlama Toleransı (Dakika)</label>
-                  <input type="number" id="ruleOtGrace" class="form-input" value="25">
-                  <small class="form-hint">17:00 + 25dk = 17:26 sonrası fazla mesai başlar</small>
+                  <input type="number" id="ruleOtGrace" class="form-input" value="20">
+                  <small class="form-hint">Vardiya bitişi + 20 dk (21-44 dk buçuk, 45+ tam saat)</small>
                 </div>
               </div>
 
@@ -1813,6 +1872,450 @@
         </div>
       </div>
 
+    </section>
+
+    <!-- ======================================================================= -->
+    <!-- TAB 9: PATRON & YÖNETİM ANALİTİK MASASI (GÜNLÜK BÖLÜM MEVCUDU)          -->
+    <!-- ======================================================================= -->
+    <section class="tab-content" id="tab-boss-attendance">
+      
+      <!-- Executive Header Banner -->
+      <div class="boss-header-card">
+        <div class="boss-header-left">
+          <div class="boss-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div>
+            <div class="boss-title-row">
+              <h2 class="boss-title">👔 Patron & Yönetim Masası: Günlük Bölüm Mevcudu</h2>
+              <span class="boss-badge">Yönetici Paneli</span>
+            </div>
+            <p class="boss-desc">
+              Günlere göre fabrikanın hangi bölümünde kaç kişinin çalıştığını gösteren dinamik görsel analiz, 30 günlük departman ısı haritası ve vardiya mevcudu.
+            </p>
+          </div>
+        </div>
+
+        <div class="boss-header-actions">
+          <a href="/api/download/gunluk_bolum_calisan_sayilari" class="btn btn-primary" download id="btnDownloadDeptExcel">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Excel Raporu İndir (.xlsx)</span>
+          </a>
+          <button class="btn btn-outline" onclick="window.print()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+            <span>Yazdır (A4)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 Executive KPI Cards -->
+      <div class="boss-kpi-grid">
+        <div class="boss-kpi-card" id="bossKpiAvgDaily">
+          <div class="boss-kpi-icon kpi-cyan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            </svg>
+          </div>
+          <div class="boss-kpi-info">
+            <span class="boss-kpi-label">Günlük Ortalama Mevcut (Hafta İçi)</span>
+            <span class="boss-kpi-value" id="valBossAvgDaily">184 <small>kişi/gün</small></span>
+            <span class="boss-kpi-sub">Fabrika geneli ortalama aktif çalışan</span>
+          </div>
+        </div>
+
+        <div class="boss-kpi-card" id="bossKpiPeakDay">
+          <div class="boss-kpi-icon kpi-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <div class="boss-kpi-info">
+            <span class="boss-kpi-label">Zirve Katılım Günü</span>
+            <span class="boss-kpi-value" id="valBossPeakDay">-</span>
+            <span class="boss-kpi-sub" id="subBossPeakDay">En yüksek çalışan sayısı</span>
+          </div>
+        </div>
+
+        <div class="boss-kpi-card" id="bossKpiBusiestDept">
+          <div class="boss-kpi-icon kpi-purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+          </div>
+          <div class="boss-kpi-info">
+            <span class="boss-kpi-label">En Yoğun Departman</span>
+            <span class="boss-kpi-value" id="valBossBusiestDept">-</span>
+            <span class="boss-kpi-sub" id="subBossBusiestDept">0 Adam-Gün hacmi</span>
+          </div>
+        </div>
+
+        <div class="boss-kpi-card" id="bossKpiSundayAvg">
+          <div class="boss-kpi-icon kpi-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 14 14"/>
+            </svg>
+          </div>
+          <div class="boss-kpi-info">
+            <span class="boss-kpi-label">Pazar Mesaisi Ortalama Mevcut</span>
+            <span class="boss-kpi-value" id="valBossSundayAvg">39 <small>kişi/Pazar</small></span>
+            <span class="boss-kpi-sub">Hafta tatili nöbet/vardiya mevcudu</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 30-Day Day Selector Ribbon -->
+      <div class="day-ribbon-card">
+        <div class="day-ribbon-header">
+          <div>
+            <h3 class="card-title">📅 Gün Seçici (1 - 30 Eylül 2026)</h3>
+            <p class="card-desc">İncelemek istediğiniz güne tıklayarak o günkü tüm departman çalışan sayılarını, saatlerini ve personelleri görün:</p>
+          </div>
+          <div class="day-ribbon-legend">
+            <span class="ribbon-legend-item"><span class="legend-dot dot-cyan"></span> Seçili Gün</span>
+            <span class="ribbon-legend-item"><span class="legend-dot dot-yellow"></span> Pazar Mesaisi</span>
+          </div>
+        </div>
+
+        <div class="day-ribbon-scroll" id="bossDayRibbonContainer">
+          <!-- Populated by JS: 30 day cards with day number, day name, workers count badge -->
+        </div>
+      </div>
+
+      <!-- Active Day Breakdown & Department Ranked Cards -->
+      <div class="boss-daily-breakdown-card">
+        <div class="daily-breakdown-header">
+          <div class="daily-breakdown-title-box">
+            <h3 class="daily-breakdown-title" id="bossSelectedDayTitle">
+              🗓️ 01 Eylül 2026 Salı — Departman Mevcut Dağılımı
+            </h3>
+            <span class="daily-breakdown-badge" id="bossSelectedDayBadge">Yükleniyor...</span>
+          </div>
+
+          <div class="daily-breakdown-tools">
+            <div class="search-input-wrapper" style="min-width: 240px;">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" id="bossDeptSearchInput" class="search-input" placeholder="Bölüm ara..." oninput="filterBossDailyDepartments()">
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="window.print()">🖨️ Bu Günü Yazdır</button>
+          </div>
+        </div>
+
+        <!-- Department Cards Grid for Selected Day -->
+        <div class="boss-dept-cards-grid" id="bossDeptCardsContainer">
+          <!-- Populated by JS: Ranked visual cards with progress bars and worker buttons -->
+        </div>
+      </div>
+
+      <!-- 30-Day Department Heatmap Matrix -->
+      <div class="boss-matrix-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🗺️ 30 Günlük Tüm Bölümler Çalışan Sayısı Isı Haritası (Heatmap)</h3>
+            <p class="card-desc">Her departmanın gün gün kaç kişiyle çalıştığını gösteren canlı fabrika matrisi. Bir hücreye tıklayarak çalışanları görebilirsiniz.</p>
+          </div>
+          <div class="heatmap-legend">
+            <span class="heatmap-legend-item"><span class="heat-chip heat-0">-</span> 0</span>
+            <span class="heatmap-legend-item"><span class="heat-chip heat-low">1-9</span> 1-9 Kişi</span>
+            <span class="heatmap-legend-item"><span class="heat-chip heat-med">10-29</span> 10-29 Kişi</span>
+            <span class="heatmap-legend-item"><span class="heat-chip heat-high">30+</span> 30+ Kişi</span>
+            <span class="heatmap-legend-item"><span class="heat-chip heat-sun">Paz</span> Pazar</span>
+          </div>
+        </div>
+
+        <div class="table-container boss-heatmap-table-container">
+          <table class="data-table boss-heatmap-table" id="bossHeatmapTable">
+            <thead id="bossHeatmapHead">
+              <!-- Dynamically populated -->
+            </thead>
+            <tbody id="bossHeatmapBody">
+              <!-- Dynamically populated -->
+            </tbody>
+            <tfoot id="bossHeatmapFoot">
+              <!-- Total row -->
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 30-Day Attendance Trend Chart (SVG) -->
+      <div class="boss-chart-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">📈 Günlük Çalışan Sayısı Karşılaştırmalı Trend Grafiği</h3>
+            <p class="card-desc">Fabrikanın veya seçilen bölümün 30 günlük çalışan mevcudu seyri:</p>
+          </div>
+          <div class="chart-controls">
+            <label for="bossTrendDeptSelect" style="font-size: 12px; color: var(--text-muted); margin-right: 8px;">Bölüm Seç:</label>
+            <select id="bossTrendDeptSelect" class="form-select form-select-sm" onchange="renderBossTrendChart()" style="min-width: 220px;">
+              <option value="ALL">🏭 Tüm Fabrika Toplamı</option>
+              <!-- Populated by JS with departments -->
+            </select>
+          </div>
+        </div>
+
+        <div class="chart-container" id="bossTrendChartContainer" style="height: 280px; position: relative;">
+          <!-- SVG Trend chart injected here -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB: SERVİS VE GÜZERGAH LOJİSTİK RADARI                                  -->
+    <!-- ========================================================================= -->
+    <section class="tab-content" id="tab-shuttle">
+      <div class="boss-header-banner" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.08) 100%); border-left: 4px solid #818cf8;">
+        <div class="boss-banner-content">
+          <div class="boss-banner-icon" style="background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #818cf8;">🚌</div>
+          <div>
+            <h2 class="boss-banner-title">Servis ve Güzergah Lojistik Radarı</h2>
+            <p class="boss-banner-desc">Personel ikametgah lokasyonları ve günlük PDKS mesai girişlerine göre dinamik servis doluluğu, araç tahsisi ve sefer optimizasyonu</p>
+          </div>
+        </div>
+        <div class="boss-banner-actions">
+          <button class="btn btn-primary" onclick="loadShuttleLogistics()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Verileri Güncelle</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Shuttle KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(99, 102, 241, 0.15); color: #818cf8;">🗺️</div>
+          <div class="kpi-label">Toplam Hat / Güzergah</div>
+          <div class="kpi-value" id="kpiShuttleTotalRoutes">-</div>
+          <div class="kpi-hint">Tanımlı servis güzergahları</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(56, 189, 248, 0.15); color: var(--color-cyan);">👥</div>
+          <div class="kpi-label">Aylık Toplam Yolcu Seferi</div>
+          <div class="kpi-value" id="kpiShuttleTotalTrips">-</div>
+          <div class="kpi-hint">Ay boyunca taşınan yolcu sayısı</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--color-emerald);">🚐</div>
+          <div class="kpi-label">Günlük Ort. Yolcu (Hafta İçi)</div>
+          <div class="kpi-value" id="kpiShuttleAvgPax">-</div>
+          <div class="kpi-hint">Çalışma günleri ortalama yolcu</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--color-amber);">⭐</div>
+          <div class="kpi-label">En Yoğun Güzergah</div>
+          <div class="kpi-value" id="kpiShuttleBusiestRoute" style="font-size: 16px; line-height: 1.2;">-</div>
+          <div class="kpi-hint">En yüksek yolcu hacimli hat</div>
+        </div>
+      </div>
+
+      <!-- Shuttle Day Ribbon Selector -->
+      <div class="boss-day-ribbon-card">
+        <div class="boss-ribbon-header">
+          <div class="boss-ribbon-title">
+            <span>📅 Gün Bazlı Servis & Sefer Planı:</span>
+            <span class="boss-selected-date-badge" id="shuttleSelectedDateBadge">Seçilen Gün: 1 Eylül 2026</span>
+          </div>
+          <div class="boss-ribbon-stats">
+            <span>Toplam Sefer Yolcusu: <strong id="shuttleDayTotalPax">-</strong></span>
+            <span class="dot-sep">•</span>
+            <span>Önerilen Araç: <strong id="shuttleDayTotalVehicles">- Araç</strong></span>
+          </div>
+        </div>
+        <div class="boss-days-scroll" id="shuttleDaysScroll">
+          <!-- 1..30 day buttons injected by JS -->
+        </div>
+      </div>
+
+      <!-- Shuttle Route Cards Grid -->
+      <div class="section-title" style="margin: 20px 0 12px 0; font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; justify-content: space-between;">
+        <span>🚍 Günlük Hat Doluluk ve Araç Tahsis Dağılımı</span>
+        <span style="font-size: 12px; font-weight: 400; color: var(--text-muted);">* 16 Pax Minibüs / 27 Pax Midibüs / 45 Pax Otobüs Optimizasyonu</span>
+      </div>
+      <div class="shuttle-routes-grid" id="shuttleRoutesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <!-- Injected by JS -->
+      </div>
+
+      <!-- Monthly Route Summary Table -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">📊 Güzergah Bazında Aylık Toplamlar ve Genel Sefer Özeti</h3>
+            <p class="card-desc">Her servis hattına kayıtlı personel, taşınan toplam yolcu ve pik sefer dolulukları</p>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Güzergah Adı</th>
+                <th style="text-align: center;">Kayıtlı Personel</th>
+                <th style="text-align: center;">Aylık Toplam Yolcu</th>
+                <th style="text-align: center;">Günlük Ort. Yolcu</th>
+                <th style="text-align: center;">Pik Gün Yolcu</th>
+                <th style="text-align: center;">Önerilen Standart Araç</th>
+              </tr>
+            </thead>
+            <tbody id="shuttleSummaryTableBody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- TAB: VARDİYA ÇİZELGESİ VE SAPMA RADARI                                    -->
+    <!-- ========================================================================= -->
+    <section class="tab-content" id="tab-shift-planner">
+      <div class="boss-header-banner" style="background: linear-gradient(135deg, rgba(244, 63, 94, 0.15) 0%, rgba(249, 115, 22, 0.08) 100%); border-left: 4px solid #f43f5e;">
+        <div class="boss-banner-content">
+          <div class="boss-banner-icon" style="background: rgba(244, 63, 94, 0.2); border-color: rgba(244, 63, 94, 0.4); color: #f43f5e;">⏱️</div>
+          <div>
+            <h2 class="boss-banner-title">Vardiya Çizelgesi ve Sapma Radarı</h2>
+            <p class="boss-banner-desc">Planlanan vardiya modelleri (V1 Gündüz, V2 Akşam, V3 Gece, OFF) ile gerçekleşen PDKS saatleri arasındaki tolerans, geç gelme, erken çıkış ve devamsızlık kontrolleri</p>
+          </div>
+        </div>
+        <div class="boss-banner-actions">
+          <button class="btn btn-primary" onclick="loadShiftPlanner()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Sapmaları Yenile</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Shift KPIs -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--color-emerald);">🎯</div>
+          <div class="kpi-label">Vardiya Uyum Oranı</div>
+          <div class="kpi-value" id="kpiShiftComplianceRate">%100</div>
+          <div class="kpi-hint">Planlanan saate tam uyum</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;">⚠️</div>
+          <div class="kpi-label">Toplam Sapma Adedi</div>
+          <div class="kpi-value" id="kpiShiftTotalDeviations">0</div>
+          <div class="kpi-hint">Geç kalma, erken çıkış, mazeretsiz</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--color-amber);">⏰</div>
+          <div class="kpi-label">Geç Girişler (>20 dk)</div>
+          <div class="kpi-value" id="kpiShiftLateCount">0</div>
+          <div class="kpi-hint">Tolerans üstü geç gelmeler</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: var(--color-rose);">🚫</div>
+          <div class="kpi-label">Mazeretsiz Devamsızlık</div>
+          <div class="kpi-value" id="kpiShiftAbsentCount">0</div>
+          <div class="kpi-hint">Vardiyası olup gelmeyenler</div>
+        </div>
+      </div>
+
+      <!-- Shift Day Ribbon -->
+      <div class="boss-day-ribbon-card">
+        <div class="boss-ribbon-header">
+          <div class="boss-ribbon-title">
+            <span>📅 İncelenen Gün:</span>
+            <span class="boss-selected-date-badge" id="shiftSelectedDateBadge">1 Eylül 2026</span>
+          </div>
+          <div class="boss-ribbon-stats">
+            <span>Uyumlu: <strong id="shiftCompliantCount" style="color: var(--color-emerald);">-</strong></span>
+            <span class="dot-sep">•</span>
+            <span>Sapma: <strong id="shiftDeviationsCount" style="color: #f43f5e;">-</strong></span>
+          </div>
+        </div>
+        <div class="boss-days-scroll" id="shiftDaysScroll">
+          <!-- 1..30 day buttons injected by JS -->
+        </div>
+      </div>
+
+      <!-- Quick Shift Bulk Assignment Bar -->
+      <div class="card" style="margin-bottom: 20px; padding: 16px 20px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px;">
+          <div>
+            <h4 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">⚡ Hızlı Vardiya Planlama Aracı</h4>
+            <div style="font-size: 12px; color: var(--text-muted);">Seçilen bölüme veya fabrikaya toplu vardiya kodu atayın:</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <select id="shiftAssignDeptSelect" class="form-select form-select-sm" style="min-width: 180px;">
+              <option value="ALL">🏭 Tüm Fabrika Personeli</option>
+              <!-- Injected by JS -->
+            </select>
+            <select id="shiftAssignCodeSelect" class="form-select form-select-sm" style="min-width: 160px;">
+              <option value="V1">V1 — 1. Vardiya (08:00 - 16:00)</option>
+              <option value="V2">V2 — 2. Vardiya (16:00 - 24:00)</option>
+              <option value="V3">V3 — 3. Vardiya (24:00 - 08:00)</option>
+              <option value="OFF">OFF — Hafta Tatili / İzin</option>
+            </select>
+            <button class="btn btn-primary" onclick="handleBulkShiftAssign()">
+              <span>Planı Kaydet</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shift Deviation Table -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h3 class="card-title">🔍 Vardiya Sapmaları ve Uyum Denetim Listesi</h3>
+            <p class="card-desc">Giriş ve çıkış hareketlerinde kural dışı sapma tespit edilen personel:</p>
+          </div>
+          <div class="filter-group" style="display: flex; gap: 6px;">
+            <button class="btn btn-sm btn-outline active" id="btnFilterShiftAll" onclick="filterShiftList('ALL')">Tümü</button>
+            <button class="btn btn-sm btn-outline" id="btnFilterShiftDeviations" onclick="filterShiftList('DEVIATIONS')">Sadece Sapmalar</button>
+            <button class="btn btn-sm btn-outline" id="btnFilterShiftLate" onclick="filterShiftList('LATE')">Geç Kalanlar</button>
+            <button class="btn btn-sm btn-outline" id="btnFilterShiftEarly" onclick="filterShiftList('EARLY')">Erken Çıkanlar</button>
+            <button class="btn btn-sm btn-outline" id="btnFilterShiftAbsent" onclick="filterShiftList('ABSENT')">Devamsızlar</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px; text-align: center;">Sıra</th>
+                <th style="width: 130px;">TC Kimlik</th>
+                <th>Adı Soyadı</th>
+                <th>Bölüm</th>
+                <th style="text-align: center; width: 110px;">Planlanan Vardiya</th>
+                <th style="text-align: center; width: 90px;">Giriş Saati</th>
+                <th style="text-align: center; width: 90px;">Çıkış Saati</th>
+                <th style="text-align: right; width: 90px;">Fiili Saat</th>
+                <th style="width: 220px;">Sapma / Uyum Durumu</th>
+              </tr>
+            </thead>
+            <tbody id="shiftComparisonTableBody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -2093,6 +2596,199 @@
             <button type="submit" class="btn btn-primary">Kaydet ve Devreye Al</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: GÜNLÜK BÖLÜM ÇALIŞANLARI LİSTESİ (PATRON & YÖNETİCİ DETAYI)        -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalDeptWorkers">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="modalDeptWorkersTitle">Bölüm Çalışan Listesi</h3>
+          <p class="modal-subtitle" id="modalDeptWorkersSub" style="color: var(--text-muted); font-size: 12px; margin-top: 3px;">Detaylar yükleniyor...</p>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalDeptWorkers')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <div style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+          <div class="search-input-wrapper" style="flex: 1;">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="modalDeptWorkersSearch" class="search-input" placeholder="İsim veya TC ara..." oninput="filterModalDeptWorkers()">
+          </div>
+          <span class="badge" id="modalDeptWorkersCountBadge" style="background: var(--bg-surface); color: var(--color-cyan); font-weight: 600; padding: 6px 12px; border: 1px solid var(--border-subtle);">0 Personel</span>
+        </div>
+
+        <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px; text-align: center;">Sıra</th>
+                <th style="width: 130px;">TC Kimlik No</th>
+                <th>Adı Soyadı</th>
+                <th style="width: 100px; text-align: center;">Giriş Saati</th>
+                <th style="width: 100px; text-align: center;">Çıkış Saati</th>
+                <th style="width: 110px; text-align: right;">Çalışma Süresi</th>
+                <th style="width: 100px; text-align: right;">Fazla Mesai</th>
+                <th style="width: 110px; text-align: center;">Durum</th>
+              </tr>
+            </thead>
+            <tbody id="modalDeptWorkersTableBody">
+              <!-- Dynamic rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <small style="color: var(--text-dim);" id="modalDeptWorkersFooterInfo">* PDKS turnike giriş-çıkış hareketleri ve onaylı çalışma saatleri baz alınmıştır.</small>
+          <button type="button" class="btn btn-outline" onclick="closeModal('modalDeptWorkers')">Kapat</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: YÖNETİM İCRA BRİFİNGİ (WHATSAPP / TELEGRAM / E-POSTA FORMATI)      -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalExecutiveBriefing">
+    <div class="modal-dialog" style="max-width: 680px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">🌅</span>
+          <div>
+            <h3 class="modal-title">Patron & Yönetim İcra Brifingi</h3>
+            <p class="modal-subtitle" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Tek tıkla kopyalanıp WhatsApp / Telegram'a yapıştırılmaya hazır kurumsal metin</p>
+          </div>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalExecutiveBriefing')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <div style="display: flex; gap: 10px; margin-bottom: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-primary" id="btnBriefingMorning" onclick="loadExecutiveBriefingText('morning')">🌅 Sabah Brifingi</button>
+            <button class="btn btn-sm btn-outline" id="btnBriefingEvening" onclick="loadExecutiveBriefingText('evening')">🌙 Akşam Kapanış Raporu</button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <label for="briefingDaySelect" style="font-size: 12px; color: var(--text-muted);">Gün Seç:</label>
+            <select id="briefingDaySelect" class="form-select form-select-sm" onchange="loadExecutiveBriefingText()" style="min-width: 100px;">
+              <!-- 1..30 days -->
+            </select>
+          </div>
+        </div>
+
+        <div style="position: relative;">
+          <textarea id="briefingTextContent" class="form-textarea" rows="14" style="font-family: var(--font-mono, monospace); font-size: 12.5px; line-height: 1.6; background: #0b0f19; color: #e2e8f0; border-color: #334155; width: 100%; resize: vertical;" readonly></textarea>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 12px; color: var(--color-emerald); font-weight: 600;" id="briefingCopiedNotice"></span>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-outline" onclick="closeModal('modalExecutiveBriefing')">Kapat</button>
+            <button type="button" class="btn btn-primary" onclick="copyExecutiveBriefingToClipboard()">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Metni Kopyala</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: VERİTABANI YEDEKLEME VE GÜVENLİK MERKEZİ                           -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalDatabaseBackup">
+    <div class="modal-dialog" style="max-width: 640px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">💾</span>
+          <div>
+            <h3 class="modal-title">SQLite Arşiv ve Veritabanı Yedekleme</h3>
+            <p class="modal-subtitle" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Tüm dönem puantajları, icralar ve amir onaylarının güvenli anlık yedekleri</p>
+          </div>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalDatabaseBackup')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+          <div>
+            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary);">Anlık Veritabanı Yedeği Al</div>
+            <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Sistem çalışırken kilitlenmeden sıcak yedek oluşturulur.</div>
+          </div>
+          <button class="btn btn-primary" id="btnTriggerBackupNow" onclick="handleDatabaseBackupNow()">
+            <span>⚡ Şimdi Yedek Al</span>
+          </button>
+        </div>
+
+        <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Mevcut Yedek Dosyaları</h4>
+        <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Yedek Dosyası</th>
+                <th style="width: 100px; text-align: right;">Boyut</th>
+                <th style="width: 140px; text-align: center;">Tarih</th>
+                <th style="width: 80px; text-align: center;">İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="dbBackupsTableBody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+          <button type="button" class="btn btn-outline" onclick="closeModal('modalDatabaseBackup')">Kapat</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: GÜZERGAH YOLCU LİSTESİ (SERVİS RADARI DETAYI)                      -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" id="modalShuttleRiders">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="modalShuttleRidersTitle">Servis Güzergahı Yolcu Listesi</h3>
+          <p class="modal-subtitle" id="modalShuttleRidersSub" style="color: var(--text-muted); font-size: 12px; margin-top: 3px;">Yükleniyor...</p>
+        </div>
+        <button class="btn-close" onclick="closeModal('modalShuttleRiders')">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 14px;">
+        <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px; text-align: center;">Sıra</th>
+                <th style="width: 130px;">TC Kimlik</th>
+                <th>Adı Soyadı</th>
+                <th>Bölüm</th>
+                <th>İkametgah</th>
+                <th style="width: 100px; text-align: center;">Vardiya</th>
+                <th style="width: 90px; text-align: center;">Giriş Saati</th>
+              </tr>
+            </thead>
+            <tbody id="modalShuttleRidersTableBody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <small style="color: var(--text-dim);">* Servis listesi personelin kayıtlı ikametgahı ve günlük turnike basım saatlerine göre dinamik oluşturulmuştur.</small>
+          <button type="button" class="btn btn-outline" onclick="closeModal('modalShuttleRiders')">Kapat</button>
+        </div>
       </div>
     </div>
   </div>

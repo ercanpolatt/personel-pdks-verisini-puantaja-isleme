@@ -444,6 +444,297 @@ def generate_compliance_excel(comp_data: Dict[str, Any], output_path: str):
     wb.save(output_path)
     return output_path
 
+def generate_daily_department_attendance_excel(att_data: Dict[str, Any], output_path: str = "gunluk_bolum_calisan_sayilari.xlsx") -> str:
+    """Yönetim ve Patron için Renkli ve Formüllü Günlük Departman Mevcudu Çalışma Kitabı."""
+    wb = Workbook()
+    
+    font_title = Font(name="Arial", size=13, bold=True, color="FFFFFF")
+    font_head = Font(name="Arial", size=9, bold=True, color="FFFFFF")
+    font_sun_head = Font(name="Arial", size=9, bold=True, color="854D0E")
+    font_bold = Font(name="Arial", size=9, bold=True)
+    font_data = Font(name="Arial", size=9)
+    font_dim = Font(name="Arial", size=9, color="94A3B8")
+    
+    fill_navy = PatternFill("solid", fgColor="1F4E79")
+    fill_sun = PatternFill("solid", fgColor="FEF08A")
+    fill_total = PatternFill("solid", fgColor="E2E8F0")
+    fill_heat_low = PatternFill("solid", fgColor="E0F2FE")   # 1-9
+    fill_heat_med = PatternFill("solid", fgColor="BAE6FD")   # 10-29
+    fill_heat_high = PatternFill("solid", fgColor="7DD3FC")  # 30+
+    
+    border_thin = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+    border_total = Border(
+        top=Side(style='thin', color='000000'),
+        bottom=Side(style='double', color='000000')
+    )
+    
+    # -------------------------------------------------------------------------
+    # SAYFA 1: GÜNLÜK BÖLÜM MEVCUT MATRİSİ (HEATMAP)
+    # -------------------------------------------------------------------------
+    ws_mat = wb.active
+    ws_mat.title = "Gunluk_Bolum_Mevcut_Matrisi"
+    ws_mat.views.sheetView[0].showGridLines = True
+    
+    days_count = att_data.get("days_in_month", 30)
+    sundays = set(att_data.get("sundays", []))
+    month_num = att_data.get("month", 9)
+    month_name = MONTH_NAMES_TR.get(month_num, "Eylül")
+    year = att_data.get("year", 2026)
+    
+    last_col_idx = 2 + days_count + 4  # Sıra, Bölüm, Günler, Adam-Gün, Ortalama, Peak, Toplam Saat
+    last_col_let = get_column_letter(last_col_idx)
+    
+    ws_mat.merge_cells(f"A1:{last_col_let}1")
+    ws_mat["A1"] = f"FİDE KONSERVE — GÜNLERE GÖRE BÖLÜM BAZINDA ÇALIŞAN PERSONEL SAYILARI ({month_name.upper()} {year})"
+    ws_mat["A1"].font = font_title
+    ws_mat["A1"].fill = fill_navy
+    ws_mat["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_mat.row_dimensions[1].height = 28
+    
+    # Başlık satırı
+    ws_mat.row_dimensions[3].height = 24
+    ws_mat["A3"] = "Sıra"
+    ws_mat["A3"].font = font_head
+    ws_mat["A3"].fill = fill_navy
+    ws_mat["A3"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_mat.column_dimensions["A"].width = 6
+    
+    ws_mat["B3"] = "Departman / Bölüm"
+    ws_mat["B3"].font = font_head
+    ws_mat["B3"].fill = fill_navy
+    ws_mat["B3"].alignment = Alignment(horizontal="left", vertical="center")
+    ws_mat.column_dimensions["B"].width = 25
+    
+    for d in range(1, days_count + 1):
+        col_let = get_column_letter(2 + d)
+        cell = ws_mat[f"{col_let}3"]
+        cell.value = d
+        if d in sundays:
+            cell.font = font_sun_head
+            cell.fill = fill_sun
+        else:
+            cell.font = font_head
+            cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws_mat.column_dimensions[col_let].width = 5.5
+        
+    stat_cols = [
+        ("Toplam Adam-Gün", 17),
+        ("Günlük Ortalama", 15),
+        ("Zirve Mevcut", 13),
+        ("Toplam Saat", 16)
+    ]
+    for idx, (label, width) in enumerate(stat_cols, start=1):
+        col_let = get_column_letter(2 + days_count + idx)
+        cell = ws_mat[f"{col_let}3"]
+        cell.value = label
+        cell.font = font_head
+        cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws_mat.column_dimensions[col_let].width = width
+
+    dept_matrix = att_data.get("department_matrix", [])
+    start_row = 4
+    first_day_col = get_column_letter(3)
+    last_day_col = get_column_letter(2 + days_count)
+
+    for r_idx, dm in enumerate(dept_matrix, start=start_row):
+        row_num = r_idx - start_row + 1
+        ws_mat[f"A{r_idx}"] = row_num
+        ws_mat[f"A{r_idx}"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_mat[f"A{r_idx}"].font = font_data
+        ws_mat[f"A{r_idx}"].border = border_thin
+        
+        ws_mat[f"B{r_idx}"] = dm["department"]
+        ws_mat[f"B{r_idx}"].alignment = Alignment(horizontal="left", vertical="center")
+        ws_mat[f"B{r_idx}"].font = font_bold
+        ws_mat[f"B{r_idx}"].border = border_thin
+        
+        counts = dm.get("daily_counts", [0] * days_count)
+        
+        for d in range(1, days_count + 1):
+            col_let = get_column_letter(2 + d)
+            cell = ws_mat[f"{col_let}{r_idx}"]
+            val = counts[d - 1] if d - 1 < len(counts) else 0
+            cell.border = border_thin
+            if val > 0:
+                cell.value = val
+                cell.font = font_bold
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if val >= 30:
+                    cell.fill = fill_heat_high
+                elif val >= 10:
+                    cell.fill = fill_heat_med
+                else:
+                    cell.fill = fill_heat_low
+            else:
+                cell.value = "-"
+                cell.font = font_dim
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                if d in sundays:
+                    cell.fill = PatternFill("solid", fgColor="FEFCE8")
+                    
+        # İstatistik Sütunları
+        col_ag = get_column_letter(3 + days_count)
+        ws_mat[f"{col_ag}{r_idx}"] = f"=SUM({first_day_col}{r_idx}:{last_day_col}{r_idx})"
+        ws_mat[f"{col_ag}{r_idx}"].alignment = Alignment(horizontal="right", vertical="center")
+        ws_mat[f"{col_ag}{r_idx}"].font = font_bold
+        ws_mat[f"{col_ag}{r_idx}"].border = border_thin
+        ws_mat[f"{col_ag}{r_idx}"].number_format = "#,##0"
+        
+        col_avg = get_column_letter(4 + days_count)
+        ws_mat[f"{col_avg}{r_idx}"] = dm.get("avg_workers_on_active_days", 0.0)
+        ws_mat[f"{col_avg}{r_idx}"].alignment = Alignment(horizontal="right", vertical="center")
+        ws_mat[f"{col_avg}{r_idx}"].font = font_data
+        ws_mat[f"{col_avg}{r_idx}"].border = border_thin
+        ws_mat[f"{col_avg}{r_idx}"].number_format = "0.0"
+        
+        col_peak = get_column_letter(5 + days_count)
+        ws_mat[f"{col_peak}{r_idx}"] = dm.get("peak_workers", 0)
+        ws_mat[f"{col_peak}{r_idx}"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_mat[f"{col_peak}{r_idx}"].font = font_bold
+        ws_mat[f"{col_peak}{r_idx}"].border = border_thin
+        ws_mat[f"{col_peak}{r_idx}"].number_format = "#,##0"
+        
+        col_hrs = get_column_letter(6 + days_count)
+        ws_mat[f"{col_hrs}{r_idx}"] = dm.get("total_hours", 0.0)
+        ws_mat[f"{col_hrs}{r_idx}"].alignment = Alignment(horizontal="right", vertical="center")
+        ws_mat[f"{col_hrs}{r_idx}"].font = font_bold
+        ws_mat[f"{col_hrs}{r_idx}"].border = border_thin
+        ws_mat[f"{col_hrs}{r_idx}"].number_format = "#,##0.0"
+
+    # En Alt Toplam Satırı (Fabrika Günlük Toplam Mevcudu)
+    tot_row = start_row + len(dept_matrix)
+    ws_mat.row_dimensions[tot_row].height = 22
+    ws_mat[f"A{tot_row}"] = ""
+    ws_mat[f"A{tot_row}"].fill = fill_total
+    ws_mat[f"A{tot_row}"].border = border_total
+    
+    ws_mat[f"B{tot_row}"] = "TÜM FABRİKA GÜNLÜK MEVCUT"
+    ws_mat[f"B{tot_row}"].font = Font(name="Arial", size=9, bold=True, color="1E293B")
+    ws_mat[f"B{tot_row}"].fill = fill_total
+    ws_mat[f"B{tot_row}"].alignment = Alignment(horizontal="left", vertical="center")
+    ws_mat[f"B{tot_row}"].border = border_total
+    
+    first_data_r = start_row
+    last_data_r = tot_row - 1
+    for d in range(1, days_count + 1):
+        col_let = get_column_letter(2 + d)
+        cell = ws_mat[f"{col_let}{tot_row}"]
+        cell.value = f"=SUM({col_let}{first_data_r}:{col_let}{last_data_r})"
+        cell.font = font_bold
+        cell.fill = fill_total
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border_total
+        cell.number_format = "#,##0"
+        
+    # Toplam kolonların alt toplamları
+    col_ag = get_column_letter(3 + days_count)
+    ws_mat[f"{col_ag}{tot_row}"] = f"=SUM({col_ag}{first_data_r}:{col_ag}{last_data_r})"
+    ws_mat[f"{col_ag}{tot_row}"].font = font_bold
+    ws_mat[f"{col_ag}{tot_row}"].fill = fill_total
+    ws_mat[f"{col_ag}{tot_row}"].alignment = Alignment(horizontal="right", vertical="center")
+    ws_mat[f"{col_ag}{tot_row}"].border = border_total
+    ws_mat[f"{col_ag}{tot_row}"].number_format = "#,##0"
+    
+    col_avg = get_column_letter(4 + days_count)
+    ws_mat[f"{col_avg}{tot_row}"] = f"=AVERAGE({col_avg}{first_data_r}:{col_avg}{last_data_r})"
+    ws_mat[f"{col_avg}{tot_row}"].font = font_bold
+    ws_mat[f"{col_avg}{tot_row}"].fill = fill_total
+    ws_mat[f"{col_avg}{tot_row}"].alignment = Alignment(horizontal="right", vertical="center")
+    ws_mat[f"{col_avg}{tot_row}"].border = border_total
+    ws_mat[f"{col_avg}{tot_row}"].number_format = "0.0"
+    
+    col_peak = get_column_letter(5 + days_count)
+    ws_mat[f"{col_peak}{tot_row}"] = f"=MAX({first_day_col}{tot_row}:{last_day_col}{tot_row})"
+    ws_mat[f"{col_peak}{tot_row}"].font = font_bold
+    ws_mat[f"{col_peak}{tot_row}"].fill = fill_total
+    ws_mat[f"{col_peak}{tot_row}"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_mat[f"{col_peak}{tot_row}"].border = border_total
+    ws_mat[f"{col_peak}{tot_row}"].number_format = "#,##0"
+    
+    col_hrs = get_column_letter(6 + days_count)
+    ws_mat[f"{col_hrs}{tot_row}"] = f"=SUM({col_hrs}{first_data_r}:{col_hrs}{last_data_r})"
+    ws_mat[f"{col_hrs}{tot_row}"].font = font_bold
+    ws_mat[f"{col_hrs}{tot_row}"].fill = fill_total
+    ws_mat[f"{col_hrs}{tot_row}"].alignment = Alignment(horizontal="right", vertical="center")
+    ws_mat[f"{col_hrs}{tot_row}"].border = border_total
+    ws_mat[f"{col_hrs}{tot_row}"].number_format = "#,##0.0"
+
+    # -------------------------------------------------------------------------
+    # SAYFA 2: GÜNLÜK DETAYLI BÖLÜM LİSTESİ
+    # -------------------------------------------------------------------------
+    ws_det = wb.create_sheet(title="Gunluk_Detayli_Bolum_Listesi")
+    ws_det.views.sheetView[0].showGridLines = True
+    
+    det_headers = [
+        ("Tarih", 14), ("Gün", 8), ("Gün Adı", 14), ("Pazar Mı?", 12),
+        ("Departman", 26), ("Çalışan Personel", 16), ("Toplam Saat", 15),
+        ("Fazla Mesai (Saat)", 18), ("Kişi Başı Ort. Saat", 18), ("Gün İçi Payı (%)", 16)
+    ]
+    ws_det.row_dimensions[1].height = 24
+    for c_idx, (h_text, w) in enumerate(det_headers, start=1):
+        cl = get_column_letter(c_idx)
+        cell = ws_det[f"{cl}1"]
+        cell.value = h_text
+        cell.font = font_head
+        cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws_det.column_dimensions[cl].width = w
+        
+    det_row = 2
+    for day_obj in att_data.get("days", []):
+        d_num = day_obj["day"]
+        d_date = day_obj["date"]
+        d_name = day_obj["day_name"]
+        is_sun = "PAZAR" if day_obj["is_sunday"] else "Hafta İçi"
+        tot_work = day_obj["total_workers"]
+        
+        for dept_obj in day_obj.get("departments", []):
+            cnt = dept_obj["count"]
+            hrs = dept_obj["hours"]
+            ot = dept_obj.get("ot_hours", 0.0)
+            avg_h = round(hrs / cnt, 1) if cnt > 0 else 0.0
+            pct = dept_obj.get("percentage", 0.0)
+            
+            ws_det[f"A{det_row}"] = d_date
+            ws_det[f"B{det_row}"] = d_num
+            ws_det[f"C{det_row}"] = d_name
+            ws_det[f"D{det_row}"] = is_sun
+            ws_det[f"E{det_row}"] = dept_obj["department"]
+            ws_det[f"F{det_row}"] = cnt
+            ws_det[f"G{det_row}"] = hrs
+            ws_det[f"H{det_row}"] = ot
+            ws_det[f"I{det_row}"] = avg_h
+            ws_det[f"J{det_row}"] = f"%{pct:.1f}"
+            
+            for c in range(1, 11):
+                cl = get_column_letter(c)
+                cell = ws_det[f"{cl}{det_row}"]
+                cell.border = border_thin
+                cell.font = font_data
+                if c in (1, 2, 3, 4):
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif c == 5:
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                    cell.font = font_bold
+                else:
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                    
+            if day_obj["is_sunday"]:
+                ws_det[f"D{det_row}"].font = font_bold
+                ws_det[f"D{det_row}"].fill = fill_sun
+                
+            det_row += 1
+
+    wb.save(output_path)
+    return output_path
+
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
@@ -615,7 +906,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "İnsan Kaynakları Yöneticisi",
         "role": "hr",
         "avatar": "👩‍💼",
-        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-compliance", "tab-audit"],
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-compliance", "tab-boss-attendance", "tab-shuttle", "tab-shift-planner", "tab-audit"],
         "can_resolve_exceptions": True,
         "can_view_finance": False,
         "can_view_compliance": True,
@@ -629,7 +920,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Bordro & Muhasebe Şefi",
         "role": "accounting",
         "avatar": "👨‍💼",
-        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-finance", "tab-bonuses", "tab-reports", "tab-audit"],
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-finance", "tab-bonuses", "tab-boss-attendance", "tab-shuttle", "tab-shift-planner", "tab-reports", "tab-audit"],
         "can_resolve_exceptions": False,
         "can_view_finance": True,
         "can_view_compliance": False,
@@ -643,7 +934,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Fabrika Müdürü / Genel Müdür",
         "role": "plant_manager",
         "avatar": "👔",
-        "allowed_tabs": ["tab-overview", "tab-finance", "tab-compliance", "tab-audit"],
+        "allowed_tabs": ["tab-overview", "tab-boss-attendance", "tab-shuttle", "tab-shift-planner", "tab-finance", "tab-compliance", "tab-audit"],
         "can_resolve_exceptions": False,
         "can_view_finance": True,
         "can_view_compliance": True,
@@ -657,7 +948,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Vardiya & Saha Amiri",
         "role": "supervisor",
         "avatar": "👷",
-        "allowed_tabs": ["tab-overview", "tab-exceptions", "tab-saha"],
+        "allowed_tabs": ["tab-overview", "tab-exceptions", "tab-boss-attendance", "tab-shuttle", "tab-shift-planner", "tab-saha"],
         "can_resolve_exceptions": True,
         "can_view_finance": False,
         "can_view_compliance": True,
@@ -671,7 +962,7 @@ USERS: Dict[str, Dict[str, Any]] = {
         "title": "Sistem Yöneticisi (Admin)",
         "role": "admin",
         "avatar": "🛡️",
-        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-bonuses", "tab-finance", "tab-compliance", "tab-reports", "tab-audit"],
+        "allowed_tabs": ["tab-overview", "tab-matrix", "tab-exceptions", "tab-bonuses", "tab-finance", "tab-compliance", "tab-boss-attendance", "tab-shuttle", "tab-shift-planner", "tab-reports", "tab-audit"],
         "can_resolve_exceptions": True,
         "can_view_finance": True,
         "can_view_compliance": True,
@@ -2764,6 +3055,331 @@ def get_saha_qr_cards(
 </body>
 </html>"""
     return HTMLResponse(content=html_content, status_code=200)
+
+# -----------------------------------------------------------------------------
+# 11. GÜNLÜK DEPARTMAN MEVCUDU & PATRON ANALİTİK RADARI
+# -----------------------------------------------------------------------------
+@app.get("/api/analytics/daily-department-attendance")
+def get_daily_department_attendance(
+    day: Optional[int] = Query(None, description="Belirli bir günün detaylarını filtrele (1-31)"),
+    department: Optional[str] = Query(None, description="Belirli bir departmanı filtrele"),
+    request: Request = None
+):
+    """
+    Patron ve Yönetim için:
+    Gün gün hangi bölümde kaç kişinin çalıştığını, çalışma saatlerini,
+    bölüm yüzdelerini ve çalışan personel listesini döner.
+    """
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+
+    if hasattr(day, 'default'):
+        day = day.default
+    if hasattr(department, 'default'):
+        department = department.default
+
+    data = eng.calculate_daily_department_attendance()
+
+    if day is not None:
+        day_obj = next((d for d in data["days"] if d["day"] == day), None)
+        if not day_obj:
+            raise HTTPException(status_code=404, detail=f"{day}. gün verisi bulunamadı.")
+        return {
+            "status": "success",
+            "kpis": data["kpis"],
+            "selected_day": day_obj,
+            "all_departments": data["all_departments"]
+        }
+
+    if department and department != "all":
+        dept_clean = department.strip().upper()
+        matched = [dm for dm in data["department_matrix"] if dm["department"].strip().upper() == dept_clean]
+        if matched:
+            dm_item = matched[0]
+            days_trend = [
+                {
+                    "day": d["day"],
+                    "date": d["date"],
+                    "day_name": d["day_name"],
+                    "is_sunday": d["is_sunday"],
+                    "count": d["dept_counts"].get(dm_item["department"], 0),
+                    "hours": d["dept_hours"].get(dm_item["department"], 0.0)
+                }
+                for d in data["days"]
+            ]
+            return {
+                "status": "success",
+                "kpis": data["kpis"],
+                "department": dm_item,
+                "days_trend": days_trend
+            }
+
+    return {
+        "status": "success",
+        **data
+    }
+
+@app.get("/api/download/gunluk_bolum_calisan_sayilari")
+def download_daily_department_excel(request: Request = None):
+    """
+    Patron ve Üst Yönetim için günlere göre hangi bölümde kaç kişi çalıştığını
+    gösteren renkli, formüllü ve detaylı Excel (.xlsx) raporunu üretir ve indirir.
+    """
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    data = eng.calculate_daily_department_attendance()
+    
+    filename = f"Fide_Konserve_Gunluk_Bolum_Calisan_Sayilari_{MONTH_NAMES_TR.get(eng.target_month, eng.target_month)}_{eng.target_year}.xlsx"
+    out_file = os.path.join(DATA_DIR, filename)
+    generate_daily_department_attendance_excel(data, out_file)
+    
+    return FileResponse(
+        path=out_file,
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# -----------------------------------------------------------------------------
+# SERVİS VE GÜZERGAH LOJİSTİK RADARI API
+# -----------------------------------------------------------------------------
+@app.get("/api/analytics/shuttle-logistics")
+def get_shuttle_logistics(day: Optional[int] = Query(None)):
+    """
+    Personel ikamet ve günlük PDKS hareketlerine göre servis güzergahı,
+    yolcu doluluk ve araç tahsis optimizasyonu analizini döner.
+    """
+    if hasattr(day, "default"):
+        day = day.default
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    data = eng.calculate_shuttle_logistics(day=day)
+    return {"status": "success", **data}
+
+# -----------------------------------------------------------------------------
+# VARDİYA ÇİZELGESİ VE SAPMA RADARI API
+# -----------------------------------------------------------------------------
+class ShiftAssignRequest(BaseModel):
+    period_key: Optional[str] = None
+    day: int
+    name_key: Optional[str] = None
+    shift_code: str = "V1"
+    note: Optional[str] = ""
+    assignments: Optional[List[Dict[str, Any]]] = None
+
+@app.get("/api/shifts/planner")
+def get_shift_planner(
+    period_key: Optional[str] = Query(None),
+    day: Optional[int] = Query(None)
+):
+    """
+    Belirli bir gün için planlanan vardiya listesini ve vardiya tiplerini döner.
+    """
+    if hasattr(period_key, "default"):
+        period_key = period_key.default
+    if hasattr(day, "default"):
+        day = day.default
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    if not period_key:
+        period_key = f"{eng.target_year}-{eng.target_month:02d}"
+    if day is None:
+        day = 1
+
+    db_mgr = DatabaseManager()
+    schedules = db_mgr.get_shift_schedules(period_key, day=day)
+    comparison = db_mgr.compare_shifts_with_actual(eng, period_key, day)
+
+    shift_types = eng.rules.get("shift_roster_types", [
+        { "code": "V1", "name": "1. Vardiya (Gündüz)", "hours": "08:00 - 16:00", "badge_class": "badge-v1" },
+        { "code": "V2", "name": "2. Vardiya (Akşam)", "hours": "16:00 - 24:00", "badge_class": "badge-v2" },
+        { "code": "V3", "name": "3. Vardiya (Gece)", "hours": "24:00 - 08:00", "badge_class": "badge-v3" },
+        { "code": "OFF", "name": "Hafta Tatili / İzin", "hours": "-", "badge_class": "badge-off" }
+    ])
+
+    return {
+        "status": "success",
+        "period_key": period_key,
+        "day": day,
+        "shift_types": shift_types,
+        "schedules": schedules,
+        "comparison": comparison
+    }
+
+@app.post("/api/shifts/assign")
+def assign_shift(req: ShiftAssignRequest, request: Request = None):
+    """
+    Personele tekil veya departman bazında toplu vardiya planlaması atar.
+    """
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    period_key = req.period_key or f"{eng.target_year}-{eng.target_month:02d}"
+    db_mgr = DatabaseManager()
+
+    if req.assignments:
+        updated = db_mgr.bulk_set_shift_schedule(period_key, req.day, req.assignments)
+    elif req.name_key:
+        db_mgr.set_shift_schedule(period_key, req.day, req.name_key, req.shift_code, req.note or "")
+        updated = 1
+    else:
+        raise HTTPException(status_code=400, detail="name_key veya assignments listesi gereklidir.")
+
+    return {
+        "status": "success",
+        "message": f"{updated} adet personele vardiya atandı.",
+        "period_key": period_key,
+        "day": req.day
+    }
+
+@app.get("/api/shifts/comparison")
+def get_shift_comparison(
+    period_key: Optional[str] = Query(None),
+    day: Optional[int] = Query(None)
+):
+    """
+    Planlanan vardiya ile gerçekleşen PDKS saatlerini karşılaştırır;
+    geç kalma, erken çıkış, mazeretsiz devamsızlık ve izinli çalışma sapmalarını raporlar.
+    """
+    if hasattr(period_key, "default"):
+        period_key = period_key.default
+    if hasattr(day, "default"):
+        day = day.default
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    if not period_key:
+        period_key = f"{eng.target_year}-{eng.target_month:02d}"
+    if day is None:
+        day = 1
+
+    db_mgr = DatabaseManager()
+    comp = db_mgr.compare_shifts_with_actual(eng, period_key, day)
+    return {"status": "success", **comp}
+
+# -----------------------------------------------------------------------------
+# PATRON & YÖNETİM BİLGİLENDİRME (EXECUTIVE BRIEFING)
+# -----------------------------------------------------------------------------
+@app.get("/api/executive/briefing")
+def get_executive_briefing(
+    briefing_type: str = Query("morning", description="morning or evening"),
+    day: Optional[int] = Query(None)
+):
+    """
+    Patron ve üst yönetim için WhatsApp / Telegram / E-Posta uyumlu
+    tek tıkla kopyalanabilir sabah ve akşam icra brifingi metni üretir.
+    """
+    if hasattr(briefing_type, "default"):
+        briefing_type = briefing_type.default or "morning"
+    if hasattr(day, "default"):
+        day = day.default
+
+    mgr = EngineManager.get_instance()
+    eng = mgr.engine
+    if day is None:
+        day = 1
+
+    att_data = eng.calculate_daily_department_attendance()
+    day_item = next((d for d in att_data["days"] if d["day"] == day), None)
+    if not day_item:
+        day_item = att_data["days"][0]
+
+    date_str = day_item["date"]
+    day_name = day_item["day_name"]
+    workers_cnt = day_item["total_workers"]
+    hours_tot = day_item["total_hours"]
+    ot_tot = day_item["total_ot_hours"]
+    top_depts = day_item["departments"][:4]
+
+    unres_exc = len(eng.exception_records)
+    kpis = att_data["kpis"]
+
+    # Shuttle bilgisi
+    shuttle_data = eng.calculate_shuttle_logistics(day=day)
+    shuttle_day = shuttle_data["days"][0] if shuttle_data["days"] else None
+    total_pax = shuttle_day["total_passengers"] if shuttle_day else 0
+    total_veh = shuttle_day["total_vehicles"] if shuttle_day else 0
+
+    if briefing_type == "morning":
+        title = "🌅 FİDE KONSERVE — SABAH YÖNETİM BİLGİLENDİRMESİ"
+        md_text = (
+            f"*{title}*\n"
+            f"📅 *Tarih:* {date_str} ({day_name})\n"
+            f"🏭 *Fabrika Durumu:* Aktif Üretim Modu\n\n"
+            f"📊 *GÜNLÜK MEVCUT VE PLANLAMA*\n"
+            f"• Sahadaki Personel: *{workers_cnt} Kişi*\n"
+            f"• Aktif Bölüm Sayısı: *{day_item['active_department_count']} Bölüm*\n"
+            f"• Servis Yolcusu: *{total_pax} Yolcu* ({total_veh} Araç Seferi)\n\n"
+            f"🏢 *EN YÜKSEK MEVCUTLU BÖLÜMLER*\n"
+        )
+        for dept in top_depts:
+            md_text += f"  • {dept['department']}: *{dept['count']} Kişi* ({dept['hours']} Saat)\n"
+
+        md_text += (
+            f"\n⚠️ *DİKKAT EDİLECEK HUSUSLAR*\n"
+            f"• İncelenmeyi Bekleyen Eksik Kart: *{unres_exc} Kayıt*\n"
+            f"• Fabrika Aylık Adam-Gün Ortalaması: *{kpis['avg_daily_working_day_workers']} Kişi/Gün*\n\n"
+            f"İyi çalışmalar ve verimli üretimler dileriz. 🍅"
+        )
+    else:
+        title = "🌙 FİDE KONSERVE — AKŞAM KAPANIŞ VE MESAİ RAPORU"
+        md_text = (
+            f"*{title}*\n"
+            f"📅 *Tarih:* {date_str} ({day_name})\n\n"
+            f"📈 *GÜN SONU ÇALIŞMA ÖZETİ*\n"
+            f"• Çalışan Toplam Personel: *{workers_cnt} Kişi*\n"
+            f"• Toplam Gerçekleşen Çalışma: *{hours_tot} Saat*\n"
+            f"• Toplam Fazla Mesai (OT): *{ot_tot} Saat*\n\n"
+            f"🏢 *BÖLÜM BAZINDA ÇALIŞMA VE MESAİLER*\n"
+        )
+        for dept in top_depts:
+            md_text += f"  • {dept['department']}: *{dept['count']} Kişi* / *{dept['hours']} Saat* ({dept['ot_hours']} sa FM)\n"
+
+        md_text += (
+            f"\n🔒 *GÜVENLİK VE UYUM*\n"
+            f"• Çözümlenmeyi Bekleyen İstisnalar: *{unres_exc} Adet*\n"
+            f"• Vardiya Uyum Kontrolleri ve PDKS İmzaları Tamamlandı.\n\n"
+            f"Hayırlı akşamlar dileriz. 🌙"
+        )
+
+    return {
+        "status": "success",
+        "briefing_type": briefing_type,
+        "day": day,
+        "date": date_str,
+        "title": title,
+        "markdown": md_text,
+        "plain_text": md_text.replace("*", "")
+    }
+
+# -----------------------------------------------------------------------------
+# VERİTABANI YEDEKLEME VE GÜVENLİK API
+# -----------------------------------------------------------------------------
+@app.post("/api/database/backup")
+def trigger_database_backup(request: Request = None):
+    """Çalışan SQLite arşiv veritabanının anlık güvenli yedeğini alır."""
+    db_mgr = DatabaseManager()
+    res = db_mgr.backup_database()
+    return res
+
+@app.get("/api/database/backups")
+def get_database_backups(request: Request = None):
+    """Mevcut veritabanı yedek dosyalarını listeler."""
+    db_mgr = DatabaseManager()
+    backups = db_mgr.list_backups()
+    return {"status": "success", "count": len(backups), "backups": backups}
+
+@app.get("/api/download/database-backup/{filename}")
+def download_database_backup(filename: str, request: Request = None):
+    """İstenen veritabanı yedek dosyasını indirir."""
+    safe_fn = os.path.basename(filename)
+    fpath = os.path.join(DATA_DIR, "backups", safe_fn)
+    if not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail="Yedek dosyası bulunamadı.")
+    return FileResponse(
+        path=fpath,
+        filename=safe_fn,
+        media_type="application/x-sqlite3"
+    )
 
 # -----------------------------------------------------------------------------
 # STATİK DOSYALAR VE ANA SAYFA

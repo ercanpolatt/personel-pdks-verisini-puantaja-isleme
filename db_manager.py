@@ -218,6 +218,21 @@ class DatabaseManager:
                 );
             """)
 
+            # 8. VARDİYA ÇİZELGESİ & PLANLANAN VARDİYA KÜTÜĞÜ (SHIFT_SCHEDULES)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS shift_schedules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    period_key TEXT NOT NULL,
+                    day INTEGER NOT NULL,
+                    name_key TEXT NOT NULL,
+                    shift_code TEXT NOT NULL, -- 'V1', 'V2', 'V3', 'OFF'
+                    note TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT,
+                    UNIQUE(period_key, day, name_key)
+                );
+            """)
+
             # Hızlı arama indeksleri
             cur.execute("CREATE INDEX IF NOT EXISTS idx_monthly_period ON monthly_records(period_key);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_monthly_name ON monthly_records(name_key);")
@@ -228,6 +243,8 @@ class DatabaseManager:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action_type);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_tc ON audit_logs(target_tc);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_shift_lookup ON shift_schedules(period_key, day);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_shift_person ON shift_schedules(period_key, name_key);")
             conn.commit()
 
     # =========================================================================
@@ -1047,3 +1064,298 @@ class DatabaseManager:
         wb.save(stream)
         stream.seek(0)
         return stream.getvalue()
+
+    # =========================================================================
+    # VARDİYA ÇİZELGESİ VE SAPMA RADARI (SHIFT SCHEDULES & DEVIATIONS)
+    # =========================================================================
+    def set_shift_schedule(
+        self,
+        period_key: str,
+        day: int,
+        name_key: str,
+        shift_code: str,
+        note: str = ""
+    ) -> bool:
+        """Tekil bir personel için vardiya planlaması kaydeder."""
+        now_str = datetime.now().isoformat()
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO shift_schedules (period_key, day, name_key, shift_code, note, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(period_key, day, name_key) DO UPDATE SET
+                    shift_code = excluded.shift_code,
+                    note = excluded.note,
+                    updated_at = excluded.updated_at
+            """, (period_key, day, name_key, shift_code, note, now_str, now_str))
+            conn.commit()
+            return True
+
+    def bulk_set_shift_schedule(
+        self,
+        period_key: str,
+        day: int,
+        assignments: List[Dict[str, Any]]
+    ) -> int:
+        """Toplu vardiya ataması yapar (Departman veya liste bazlı)."""
+        now_str = datetime.now().isoformat()
+        count = 0
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            for item in assignments:
+                nk = item.get("name_key")
+                code = item.get("shift_code", "V1")
+                note = item.get("note", "")
+                if nk:
+                    cur.execute("""
+                        INSERT INTO shift_schedules (period_key, day, name_key, shift_code, note, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(period_key, day, name_key) DO UPDATE SET
+                            shift_code = excluded.shift_code,
+                            note = excluded.note,
+                            updated_at = excluded.updated_at
+                    """, (period_key, day, nk, code, note, now_str, now_str))
+                    count += 1
+            conn.commit()
+        return count
+
+    def get_shift_schedules(
+        self,
+        period_key: str,
+        day: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Dönem ve isteğe bağlı gün bazında vardiya çizelgesini çeker."""
+        with self.get_conn() as conn:
+            cur = conn.cursor()
+            if day is not None:
+                cur.execute("""
+                    SELECT period_key, day, name_key, shift_code, note, created_at, updated_at
+                    FROM shift_schedules
+                    WHERE period_key = ? AND day = ?
+                    ORDER BY day, name_key
+                """, (period_key, day))
+            else:
+                cur.execute("""
+                    SELECT period_key, day, name_key, shift_code, note, created_at, updated_at
+                    FROM shift_schedules
+                    WHERE period_key = ?
+                    ORDER BY day, name_key
+                """, (period_key,))
+            return [dict(r) for r in cur.fetchall()]
+
+    def compare_shifts_with_actual(
+        self,
+        engine: Any,
+        period_key: str,
+        day: int
+    ) -> Dict[str, Any]:
+        """
+        Planlanan vardiya ile PDKS gerçekleşen hareketlerini karşılaştırır.
+        Geç gelme, erken çıkma, mazeretsiz devamsızlık ve habersiz çalışma durumlarını raporlar.
+        """
+        schedules = {s["name_key"]: s for s in self.get_shift_schedules(period_key, day)}
+        is_sunday = day in engine.sundays
+
+        deviations = []
+        compliant_list = []
+        counts = {
+            "COMPLIANT": 0,
+            "LATE_ARRIVAL": 0,
+            "EARLY_EXIT": 0,
+            "ABSENT": 0,
+            "UNPLANNED_WORK": 0,
+            "SHIFT_MISMATCH": 0,
+            "OFF_COMPLIANT": 0
+        }
+
+        for p in engine.personnel_list:
+            nk = p["name_key"]
+            sched_rec = schedules.get(nk)
+            sched_code = sched_rec["shift_code"] if sched_rec else ("OFF" if is_sunday else "V1")
+            sched_note = sched_rec["note"] if sched_rec else ""
+
+            rec = engine.daily_results.get((nk, day))
+            hours = rec.get("final_hours", 0.0) if rec else 0.0
+            raw_g = rec.get("raw_g_saat", "-") if rec else "-"
+            raw_c = rec.get("raw_c_saat", "-") if rec else "-"
+            entry_time = raw_g if raw_g != "-" else ""
+            exit_time = raw_c if raw_c != "-" else ""
+
+            status = "COMPLIANT"
+            status_desc = "Planla Uyumlu"
+            severity = "normal"  # 'normal', 'warning', 'danger'
+
+            # Durum 1: İzinli/Tatil planlanmış ama fabrikaya gelip çalışmış
+            if sched_code == "OFF":
+                if hours > 0 or raw_g != "-":
+                    status = "UNPLANNED_WORK"
+                    status_desc = f"İzinliydi fakat çalıştı ({hours} sa)"
+                    severity = "warning"
+                    counts["UNPLANNED_WORK"] += 1
+                else:
+                    status = "OFF_COMPLIANT"
+                    status_desc = "İzinli / Hafta Tatili"
+                    counts["OFF_COMPLIANT"] += 1
+
+            # Durum 2: Çalışma planlanmış ama hiç giriş kaydı yok (Devamsız)
+            elif (hours == 0 and not entry_time):
+                status = "ABSENT"
+                status_desc = f"{sched_code} Vardiyasına Gelmedi (Devamsız)"
+                severity = "danger"
+                counts["ABSENT"] += 1
+
+            # Durum 3: Çalışma var, saat ve vardiya kontrolü
+            else:
+                entry_min = None
+                exit_min = None
+                if entry_time:
+                    try:
+                        parts = entry_time.split(":")
+                        entry_min = int(parts[0]) * 60 + int(parts[1])
+                    except Exception:
+                        pass
+                if exit_time:
+                    try:
+                        parts = exit_time.split(":")
+                        exit_min = int(parts[0]) * 60 + int(parts[1])
+                    except Exception:
+                        pass
+
+                # Vardiya bazında kural kontrolleri
+                if sched_code == "V1":  # 08:00 - 16:00 / 17:00 (Tolerans 08:20)
+                    if entry_min is not None and entry_min > 8 * 60 + 20:
+                        status = "LATE_ARRIVAL"
+                        diff = entry_min - 8 * 60
+                        status_desc = f"Geç Giriş: {entry_time} (+{diff} dk)"
+                        severity = "warning"
+                        counts["LATE_ARRIVAL"] += 1
+                    elif exit_min is not None and exit_min < 16 * 60:
+                        status = "EARLY_EXIT"
+                        diff = 16 * 60 - exit_min
+                        status_desc = f"Erken Çıkış: {exit_time} (-{diff} dk)"
+                        severity = "warning"
+                        counts["EARLY_EXIT"] += 1
+                    elif entry_min is not None and entry_min >= 15 * 60:
+                        status = "SHIFT_MISMATCH"
+                        status_desc = f"V1 planlıydı, {entry_time} girişle V2/V3 geldi"
+                        severity = "warning"
+                        counts["SHIFT_MISMATCH"] += 1
+                    else:
+                        counts["COMPLIANT"] += 1
+
+                elif sched_code == "V2":  # 16:00 - 24:00 (Tolerans 16:20)
+                    if entry_min is not None and entry_min > 16 * 60 + 20:
+                        status = "LATE_ARRIVAL"
+                        diff = entry_min - 16 * 60
+                        status_desc = f"Geç Giriş: {entry_time} (+{diff} dk)"
+                        severity = "warning"
+                        counts["LATE_ARRIVAL"] += 1
+                    elif entry_min is not None and entry_min < 13 * 60:
+                        status = "SHIFT_MISMATCH"
+                        status_desc = f"V2 planlıydı, erken ({entry_time}) geldi"
+                        severity = "warning"
+                        counts["SHIFT_MISMATCH"] += 1
+                    else:
+                        counts["COMPLIANT"] += 1
+
+                elif sched_code == "V3":  # 24:00 - 08:00 (Tolerans 00:20)
+                    if entry_min is not None and 20 < entry_min < 6 * 60:
+                        status = "LATE_ARRIVAL"
+                        status_desc = f"Gece Geç Giriş: {entry_time}"
+                        severity = "warning"
+                        counts["LATE_ARRIVAL"] += 1
+                    else:
+                        counts["COMPLIANT"] += 1
+                else:
+                    counts["COMPLIANT"] += 1
+
+            item = {
+                "name_key": nk,
+                "ad_soyad": p.get("ad_soyad", ""),
+                "bolum": p.get("bolum", ""),
+                "tc": p.get("tc", ""),
+                "scheduled_shift": sched_code,
+                "scheduled_note": sched_note,
+                "entry_time": entry_time,
+                "exit_time": exit_time,
+                "actual_hours": round(hours, 1),
+                "status": status,
+                "status_desc": status_desc,
+                "severity": severity
+            }
+
+            if status in ["LATE_ARRIVAL", "EARLY_EXIT", "ABSENT", "UNPLANNED_WORK", "SHIFT_MISMATCH"]:
+                deviations.append(item)
+            else:
+                compliant_list.append(item)
+
+        total_personnel = len(engine.personnel_list)
+        total_deviations = len(deviations)
+        total_active_planned = sum(1 for p in engine.personnel_list if schedules.get(p["name_key"], {}).get("shift_code", "V1" if not is_sunday else "OFF") != "OFF")
+        compliance_rate = round(((total_personnel - total_deviations) / total_personnel) * 100, 1) if total_personnel else 100.0
+
+        return {
+            "period_key": period_key,
+            "day": day,
+            "is_sunday": is_sunday,
+            "total_personnel": total_personnel,
+            "total_deviations": total_deviations,
+            "compliance_rate": compliance_rate,
+            "counts": counts,
+            "deviations": deviations,
+            "compliant": compliant_list
+        }
+
+    # =========================================================================
+    # VERİTABANI YEDEKLEME VE ARŞİV GÜVENLİĞİ (DATABASE BACKUPS)
+    # =========================================================================
+    def backup_database(self, backup_dir: Optional[str] = None) -> Dict[str, Any]:
+        """SQLite online backup mekanizmasıyla çalışan veritabanını güvenle kopyalar."""
+        if backup_dir is None:
+            backup_dir = os.path.join(DATA_DIR, "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+
+        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"puantaj_archive_{now_str}.db"
+        dest_path = os.path.join(backup_dir, filename)
+
+        with self.get_conn() as src:
+            dest = sqlite3.connect(dest_path)
+            src.backup(dest)
+            dest.close()
+
+        size_bytes = os.path.getsize(dest_path)
+        return {
+            "success": True,
+            "filename": filename,
+            "path": dest_path,
+            "size_bytes": size_bytes,
+            "size_kb": round(size_bytes / 1024.0, 1),
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Veritabanı yedeği başarıyla oluşturuldu: {filename}"
+        }
+
+    def list_backups(self, backup_dir: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Mevcut veritabanı yedek dosyalarını listeler."""
+        if backup_dir is None:
+            backup_dir = os.path.join(DATA_DIR, "backups")
+        if not os.path.exists(backup_dir):
+            return []
+
+        backups = []
+        for fn in sorted(os.listdir(backup_dir), reverse=True):
+            if fn.endswith(".db"):
+                fpath = os.path.join(backup_dir, fn)
+                try:
+                    stat = os.stat(fpath)
+                    backups.append({
+                        "filename": fn,
+                        "path": fpath,
+                        "size_bytes": stat.st_size,
+                        "size_kb": round(stat.st_size / 1024.0, 1),
+                        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+                except Exception:
+                    pass
+        return backups
+
