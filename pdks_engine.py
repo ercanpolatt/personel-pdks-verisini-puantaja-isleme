@@ -797,15 +797,44 @@ def repair_turnstile_anomalies(rows: List[Dict[str, str]]) -> Tuple[List[Dict[st
 
     return repaired, was_repaired, "; ".join(notes)
 
+def detect_dominant_period(pdks_path: str = "pdks.xls") -> Tuple[int, int]:
+    """PDKS dosyasındaki hareket tarihlerini analiz ederek en baskın ay ve yılı otomatik belirler."""
+    try:
+        wb = xlrd.open_workbook(pdks_path, on_demand=True)
+        sheet = wb.sheet_by_name("HarList") if "HarList" in wb.sheet_names() else wb.sheet_by_index(0)
+        counts = Counter()
+        for rx in range(1, min(sheet.nrows, 5000)):
+            row = sheet.row_values(rx)
+            for val in row:
+                val_str = str(val).strip()
+                parts = val_str.split('.')
+                if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+                    m = int(parts[1])
+                    y = int(parts[2])
+                    if 1 <= m <= 12 and 2000 <= y <= 2100:
+                        counts[(m, y)] += 1
+        if counts:
+            return counts.most_common(1)[0][0]
+    except Exception:
+        pass
+    return 10, 2026
+
 # =================================================================================================
 # 5. ANA MOTOR SINIFI (PDKSEngine)
 # =================================================================================================
 class PDKSEngine:
-    def __init__(self, pdks_path: str = "pdks.xls", puantaj_path: str = "puantaj.xls", target_month: int = 9, target_year: int = 2026, rules: Optional[Dict] = None):
+    def __init__(self, pdks_path: str = "pdks.xls", puantaj_path: str = "puantaj.xls", target_month: Optional[int] = None, target_year: Optional[int] = None, rules: Optional[Dict] = None):
         self.pdks_path = pdks_path
         self.puantaj_path = puantaj_path
-        self.target_month = target_month
-        self.target_year = target_year
+        
+        if target_month is None or target_year is None:
+            det_m, det_y = detect_dominant_period(pdks_path)
+            self.target_month = target_month if target_month is not None else det_m
+            self.target_year = target_year if target_year is not None else det_y
+        else:
+            self.target_month = target_month
+            self.target_year = target_year
+            
         self.rules = rules or load_rules()
         
         # Dinamik Takvim Tanımları

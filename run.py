@@ -20,7 +20,7 @@ import subprocess
 from builder import build_puantaj_workbook
 from export_daily_hours import build_excel_report, export_csv_and_json
 from export_simple_pdks import generate_simple_report
-from pdks_engine import PDKSEngine, fmt_hours_tr
+from pdks_engine import PDKSEngine, fmt_hours_tr, detect_dominant_period
 
 def run_tests():
     print("==================================================")
@@ -31,8 +31,8 @@ def run_tests():
 
 def main():
     parser = argparse.ArgumentParser(description="FİDE Konserve Puantaj ve PDKS İşleme Sistemi")
-    parser.add_argument("--month", type=int, default=9, help="Hedef ay (1-12, varsayılan: 9)")
-    parser.add_argument("--year", type=int, default=2026, help="Hedef yıl (varsayılan: 2026)")
+    parser.add_argument("--month", type=int, default=None, help="Hedef ay (1-12, varsayılan: pdks.xls üzerinden otomatik algılama)")
+    parser.add_argument("--year", type=int, default=None, help="Hedef yıl (varsayılan: pdks.xls üzerinden otomatik algılama)")
     parser.add_argument("--pdks", type=str, default="pdks.xls", help="PDKS hareketleri dosyası")
     parser.add_argument("--puantaj", type=str, default="puantaj.xls", help="Puantaj personel dosyası")
     parser.add_argument("--mode", type=str, default="all", choices=["all", "puantaj", "daily", "simple", "test", "web"],
@@ -45,6 +45,14 @@ def main():
     if args.mode == "test":
         run_tests()
         return
+
+    # Dönem Otomatik Algılama
+    if args.month is None or args.year is None:
+        det_m, det_y = detect_dominant_period(args.pdks)
+        if args.month is None:
+            args.month = det_m
+        if args.year is None:
+            args.year = det_y
 
     if args.mode == "web":
         import uvicorn
@@ -84,13 +92,17 @@ def main():
 
     if args.mode in ("all", "simple"):
         print("\n>>> 3. Alfabetik Günlük Çalışma Cetveli Üretiliyor...")
+        tr_month_slugs = ["", "ocak", "subat", "mart", "nisan", "mayis", "haziran", "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik"]
+        slug = tr_month_slugs[args.month] if 1 <= args.month <= 12 else "aylik"
+        simple_xlsx = f"pdks_{slug}_gunluk_calisma_saatleri.xlsx"
+        simple_csv = f"pdks_{slug}_gunluk_calisma_saatleri.csv"
         generate_simple_report(
-            output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx",
-            output_csv="pdks_eylul_gunluk_calisma_saatleri.csv",
+            output_xlsx=simple_xlsx,
+            output_csv=simple_csv,
             month=args.month,
             year=args.year
         )
-        print("   -> Alfabetik çalışma raporları hazırlandı.")
+        print(f"   -> Alfabetik çalışma raporları hazırlandı ({simple_xlsx}).")
 
     print("\n===================================================================")
     print(" İŞLEM BAŞARIYLA TAMAMLANDI! TÜM RAPORLAR GÜNCEL VE DENETLENDİ.")

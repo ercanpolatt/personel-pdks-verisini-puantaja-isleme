@@ -30,8 +30,8 @@ from pdks_engine import (
 def build_puantaj_workbook(
     pdks_path: str = "pdks.xls",
     puantaj_path: str = "puantaj.xls",
-    target_month: int = 9,
-    target_year: int = 2026,
+    target_month: Optional[int] = None,
+    target_year: Optional[int] = None,
     output_filename: str = "puantaj.xlsx"
 ) -> str:
     print("==================================================")
@@ -49,13 +49,13 @@ def build_puantaj_workbook(
     # =========================================================================
     # 1. ÇEKİRDEK HESAPLAMA MOTORUNUN ÇALIŞTIRILMASI
     # =========================================================================
-    print(f"1. PDKSEngine motoru başlatılıyor ({target_month:02d}.{target_year})...")
     engine = PDKSEngine(
         pdks_path=pdks_path,
         puantaj_path=puantaj_path,
         target_month=target_month,
         target_year=target_year
     )
+    print(f"1. PDKSEngine motoru başlatılıyor ({engine.target_month:02d}.{engine.target_year})...")
 
     p_count = engine.load_personnel()
     print(f"   -> Puantaj tablosundan {p_count} personel yüklendi.")

@@ -12,15 +12,28 @@ import csv
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from pdks_engine import PDKSEngine
+from pdks_engine import PDKSEngine, detect_dominant_period
 
 def generate_simple_report(
-    output_xlsx="pdks_eylul_gunluk_calisma_saatleri.xlsx",
-    output_csv="pdks_eylul_gunluk_calisma_saatleri.csv",
-    month=9,
-    year=2026
+    output_xlsx=None,
+    output_csv=None,
+    month=None,
+    year=None
 ):
-    print("1. PDKS ve Puantaj verileri hesaplanıyor...")
+    if month is None or year is None:
+        det_m, det_y = detect_dominant_period("pdks.xls")
+        month = month if month is not None else det_m
+        year = year if year is not None else det_y
+
+    tr_month_slugs = ["", "ocak", "subat", "mart", "nisan", "mayis", "haziran", "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik"]
+    slug = tr_month_slugs[month] if 1 <= month <= 12 else "aylik"
+    
+    if output_xlsx is None:
+        output_xlsx = f"pdks_{slug}_gunluk_calisma_saatleri.xlsx"
+    if output_csv is None:
+        output_csv = f"pdks_{slug}_gunluk_calisma_saatleri.csv"
+
+    print(f"1. PDKS ve Puantaj verileri hesaplanıyor ({month:02d}.{year})...")
     engine = PDKSEngine(pdks_path="pdks.xls", puantaj_path="puantaj.xls", target_month=month, target_year=year)
     engine.load_personnel()
     engine.load_and_process_pdks()
@@ -169,7 +182,7 @@ def generate_simple_report(
         wb.save(output_xlsx)
         print(f"3. Excel başarıyla kaydedildi: {output_xlsx}")
     except PermissionError:
-        saved_excel = "pdks_eylul_gunluk_calisma_saatleri_guncel.xlsx"
+        saved_excel = output_xlsx.replace(".xlsx", "_guncel.xlsx")
         wb.save(saved_excel)
         print(f"3. BİLGİ: '{output_xlsx}' Excel programında açık olduğu için '{saved_excel}' olarak kaydedildi.")
 
