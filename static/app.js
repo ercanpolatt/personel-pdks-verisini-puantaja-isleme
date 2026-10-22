@@ -707,8 +707,10 @@ function renderExceptionsTable(items) {
         <td class="cell-mono">${rec.all_punches || rec.raw_g_saat || '-'}</td>
         <td class="cell-mono">${fmtHours(rec.final_hours)}s</td>
         <td>
-          <span style="color: var(--color-warning); font-weight: 600;">${rec.status_type}</span>
-          <div style="font-size: 11px; color: var(--text-muted);">${rec.audit_note || ''}</div>
+          <span style="color: ${(rec.status_type && rec.status_type.includes('HIZLI')) || rec.is_rapid_punch ? '#ef4444' : 'var(--color-warning)'}; font-weight: 700;">
+            ${(rec.status_type && rec.status_type.includes('HIZLI')) || rec.is_rapid_punch ? '🚨 ' : ''}${rec.status_type}
+          </span>
+          <div style="font-size: 11px; color: ${(rec.status_type && rec.status_type.includes('HIZLI')) || rec.is_rapid_punch ? '#ef4444' : 'var(--text-muted)'}; font-weight: ${(rec.status_type && rec.status_type.includes('HIZLI')) || rec.is_rapid_punch ? '600' : 'normal'};">${rec.audit_note || ''}</div>
         </td>
         <td>
           <div class="smart-suggestion-card">
@@ -3558,11 +3560,13 @@ function renderModalDeptWorkersTable(workers) {
   let html = '';
   workers.forEach((w, idx) => {
     let statusBadge = '<span class="status-pill status-normal">NORMAL</span>';
-    if (w.status_type === 'BÖLÜM_PRİMLİ') {
+    if (w.status_type && (w.status_type.includes('HIZLI') || w.is_rapid_punch)) {
+      statusBadge = '<span class="status-pill" style="background:#fee2e2; color:#b91c1c; border:1px solid #f87171; font-weight:700;">🚨 HIZLI BASIM</span>';
+    } else if (w.status_type === 'BÖLÜM_PRİMLİ') {
       statusBadge = '<span class="status-pill status-bonus">PRİMLİ</span>';
-    } else if (w.status_type.includes('ÇIKIŞ_YOK') || w.status_type.includes('GİRİŞ_YOK')) {
+    } else if (w.status_type && (w.status_type.includes('ÇIKIŞ_YOK') || w.status_type.includes('GİRİŞ_YOK'))) {
       statusBadge = '<span class="status-pill status-warning">TEK BASIM</span>';
-    } else if (w.status_type.includes('ÇOKLU')) {
+    } else if (w.status_type && w.status_type.includes('ÇOKLU')) {
       statusBadge = '<span class="status-pill status-info">ÇOKLU BASIM</span>';
     }
 

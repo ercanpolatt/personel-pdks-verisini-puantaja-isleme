@@ -259,4 +259,65 @@ class TestMidnightShiftEarlyArrivalAndDateAssignment:
         assert res_17["final_hours"] == 7.5, "Hak ediş 7.5 saat olmalı"
 
 
+class TestRapidPunchAndExitReentryGuard:
+    """
+    Kullanıcı Kuralı:
+    1. 'mesaiyi son basımdan hesaplayacağız zaten' -> Mesai son basıma (c) kadar hesaplanır.
+    2. 'giriş ve çıkış yapmış ve çıktıktan 10 dk içerisinde tekrar giriş yapmışsa önlemini alalım'
+       - Çıkıştan sonra 10 dk içinde girip çıkış basmamışsa (örn: Mahsun Görgün 18.10: 17:28 -> 17:31):
+         Çıkış 17:28'de dondurulur, sahte açık vardiya engellenir, kırmızı alarm verilir.
+       - Çıkıştan sonra 10 dk içinde girip çalışmaya devam etmişse (örn: Kadir Koç 12.10: 20:04 -> 20:06 -> 07:53):
+         Son basıma kadar hak ediş hesaplanır (21.0s), kırmızı alarm verilir.
+    """
+
+    def test_mahsun_gorgun_unclosed_reentry(self):
+        """18.10 Mahsun Görgün: 17:28 çıkışından 3 dk sonra 17:31 giriş basılmış ve çıkış basılmamış."""
+        from pdks_engine import PDKSEngine
+        engine = PDKSEngine("pdks.xls", "puantaj.xls", target_month=10, target_year=2026)
+        engine.load_personnel()
+        engine.load_and_process_pdks()
+
+        rec = engine.daily_results.get(("MAHSUNGIRGIN", 18))
+        assert rec is not None, "Mahsun Görgün 18.10 kaydı bulunmalı"
+        assert rec["is_rapid_punch"] is True, "Hızlı basım (10 dk içi) tespit edilmeli"
+        assert rec["status_type"] == "ŞÜPHELİ_HIZLI_BASIM", "Durum türü ŞÜPHELİ_HIZLI_BASIM olmalı"
+        assert rec["is_exception"] is True, "Denetimci onay cetveline istisna olarak düşmeli"
+        assert rec["raw_c_saat"] == "17:28", "Çıkış 17:28'de dondurulmuş olmalı (17:31 açık bırakılmamalı)"
+        assert rec["final_hours"] == 8.0, "Çalışma saati 07:42 - 17:28 arası 8.0 saat olmalı"
+        assert "17:28 çıkışından 3 dk sonra tekrar giriş yapıldı (17:31) ve çıkış basılmadı!" in rec["audit_note"]
+        assert "Kırmızı Alarm" in rec["audit_note"]
+
+    def test_kadir_koc_continuous_double_shift(self):
+        """12.10 Kadir Koç: 20:04 çıkışından 2 dk sonra 20:06 tekrar giriş ve 07:53 son çıkış."""
+        from pdks_engine import PDKSEngine
+        engine = PDKSEngine("pdks.xls", "puantaj.xls", target_month=10, target_year=2026)
+        engine.load_personnel()
+        engine.load_and_process_pdks()
+
+        rec = engine.daily_results.get(("KADIRKOC", 12))
+        assert rec is not None, "Kadir Koç 12.10 kaydı bulunmalı"
+        assert rec["is_rapid_punch"] is True, "20:04 -> 20:06 hızlı basım olarak algılanmalı"
+        assert rec["status_type"] == "ŞÜPHELİ_HIZLI_BASIM"
+        assert rec["is_exception"] is True
+        # Mesai son basıma (07:53) kadar hesaplanmış olmalı
+        assert rec["final_hours"] == 21.0, "Son basıma kadar hak ediş (21.0s) korunmalı"
+        assert "20:04 çıkışından 2 dk sonra tekrar giriş yapıldı (20:06)!" in rec["audit_note"]
+        assert "Kırmızı Alarm" in rec["audit_note"]
+
+    def test_turnstile_double_swipe_preserves_last_punch(self):
+        """Çıkışta 18:12 ve 18:21 peş peşe basıldığında mesai son basıma (18:21) göre hesaplanmalıdır."""
+        from pdks_engine import extract_valid_intervals, calculate_shift_hours
+        rows = [
+            {"g_saat": "08:00:00", "c_saat": "18:12:00", "sure": "10:12"},
+            {"g_saat": "", "c_saat": "18:21:00", "sure": ""}
+        ]
+        intervals = extract_valid_intervals(rows)
+        assert intervals == [("08:00:00", "18:21:00")], "Son çıkış basımı (18:21) korunmalı"
+        res = calculate_shift_hours(intervals[0][0], intervals[0][1])
+        assert res.effective_c == "18:21"
+        assert res.overtime_hours == 1.5, "18:21 son çıkışına göre 1.5 saat mesai verilmeli"
+        assert res.total_hours == 9.0
+
+
+
 

@@ -46,6 +46,8 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
     fill_overtime   = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid") # Fazla Mesai (Açık Yeşil)
     fill_missing    = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid") # Eksik / Tek Basım (Açık Turuncu)
     fill_bonus      = PatternFill(start_color="E8D7F1", end_color="E8D7F1", fill_type="solid") # Özel Bölüm Primi (Lila / Açık Mor)
+    fill_rapid      = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid") # Kırmızı Alarm (10 dk İçi Hızlı Basım)
+    font_rapid_text = Font(name=FONT_NAME, size=9, bold=True, color="9C0006")
     fill_total      = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid") # Genel Toplam Satırı
 
     border_thin_grey = Side(style="thin", color="D3D3D3")
@@ -385,7 +387,10 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
                 
             # Arka plan vurguları
             if c_idx == 20: # Durum sütunu
-                if rec["status_type"] == "BÖLÜM_PRİMLİ":
+                if rec.get("is_rapid_punch") or "HIZLI" in rec.get("status_type", ""):
+                    cell.fill = fill_rapid
+                    cell.font = font_rapid_text
+                elif rec["status_type"] == "BÖLÜM_PRİMLİ":
                     cell.fill = fill_bonus
                 elif rec["is_exception"]:
                     cell.fill = fill_missing
@@ -434,6 +439,8 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
     
     for r_idx, rec in enumerate(sorted_exc, start=2):
         ws_exc.row_dimensions[r_idx].height = 20
+        is_rapid = rec.get("is_rapid_punch") or ("HIZLI" in rec.get("status_type", ""))
+        approval_val = "DENETİMCİ ONAYINDA (KIRMIZI ALARM)" if is_rapid else "ONAYLANDI"
         row_vals = [
             (r_idx - 1, align_center),
             (rec["tarih"], align_center),
@@ -448,7 +455,7 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
             (rec["status_type"], align_center),
             (rec["final_hours"], align_center),
             (rec["audit_note"], align_left),
-            ("ONAYLANDI", align_center)
+            (approval_val, align_center)
         ]
         
         for c_idx, (val, aln) in enumerate(row_vals, start=1):
@@ -458,11 +465,18 @@ def build_excel_report(engine, output_path="gunluk_calisma_raporu.xlsx"):
             cell.border = border_cell
             
             if c_idx == 11: # Hata Türü
-                cell.fill = fill_missing
-                cell.font = font_alert
+                if is_rapid:
+                    cell.fill = fill_rapid
+                    cell.font = font_rapid_text
+                else:
+                    cell.fill = fill_missing
+                    cell.font = font_alert
             elif c_idx == 12: # Yazılan Saat
                 cell.number_format = "0.0"
                 cell.fill = fill_overtime if rec["final_hours"] > 7.5 else fill_zebra
+            elif c_idx == 14 and is_rapid:
+                cell.fill = fill_rapid
+                cell.font = font_rapid_text
 
     ws_exc.freeze_panes = "G2"
     ws_exc.auto_filter.ref = f"A1:{get_column_letter(len(exc_headers))}{len(sorted_exc)+1}"
@@ -491,7 +505,8 @@ def export_csv_and_json(engine, csv_path="gunluk_calismalar.csv", json_path="gun
         "tarih", "gun", "gun_adi", "tc", "sicil", "kart", "ad_soyad", "bolum", "lokasyon",
         "raw_g_saat", "raw_c_saat", "effective_g", "effective_c", "all_punches",
         "gross_hours", "break_hours", "fiili_sure", "base_hours", "overtime_hours",
-        "bonus_hours", "final_hours", "status_type", "is_exception", "audit_note"
+        "bonus_hours", "final_hours", "status_type", "is_exception", "is_rapid_punch",
+        "rapid_detail", "audit_note"
     ]
     
     with open(csv_path, mode="w", newline="", encoding="utf-8-sig") as f:

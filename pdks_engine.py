@@ -656,7 +656,8 @@ def calc_factory_worked_hours(g_saat_str: str, c_saat_str: str, sure_str: str = 
 def extract_valid_intervals(rows: List[Dict[str, str]]) -> List[Tuple[str, str]]:
     """
     PDKS gün içerisindeki hareketlerinden geçerli çalışma aralıklarını (parçalı çalışma oturumlarını) ayıklar.
-    - Peş peşe basılan anlık turnike çift basımları (<= 5 dk) tekil giriş veya çıkışa indirgenir.
+    - Peş peşe basılan anlık turnike çift basımları (<= 10 dk) tekil giriş veya çıkışa indirgenir.
+    - Mesai hesaplamalarında çalışanın hak kaybına uğramaması için son basımı (c) korunur.
     - Gün içindeki gerçek giriş-çıkış aralıkları (örn: 08:00-10:00 ve 14:00-15:00) bağımsız oturumlar olarak korunur.
     """
     intervals = []
@@ -673,12 +674,12 @@ def extract_valid_intervals(rows: List[Dict[str, str]]) -> List[Tuple[str, str]]
                 cm = chm[0] * 60 + chm[1]
                 if cm < gm:
                     cm += 24 * 60
-                # <= 5 dk anlık turnike çift basımı (girişte veya çıkışta mükerrer basım)
-                if cm - gm <= 5:
+                # <= 10 dk anlık turnike çift basımı (girişte veya çıkışta mükerrer basım)
+                if cm - gm <= 10:
                     if gm < 12 * 60:
                         orphan_g.append(g)
                     else:
-                        orphan_c.append(c)
+                        orphan_c.append(c)  # Mesai son basımdan (c) hesaplanır
                 else:
                     intervals.append((g, c))
                 continue
@@ -697,19 +698,13 @@ def extract_valid_intervals(rows: List[Dict[str, str]]) -> List[Tuple[str, str]]
             if i == 0 and orphan_g:
                 og_hm = parse_hm(orphan_g[0])
                 ig_hm = parse_hm(ig)
-                if og_hm and ig_hm:
-                    og_m = og_hm[0] * 60 + og_hm[1]
-                    ig_m = ig_hm[0] * 60 + ig_hm[1]
-                    if og_m < ig_m and (ig_m - og_m) <= 90:
-                        curr_g = orphan_g[0]
+                if og_hm and ig_hm and (og_hm[0] * 60 + og_hm[1] < ig_hm[0] * 60 + ig_hm[1]):
+                    curr_g = orphan_g[0]
             if i == len(intervals) - 1 and orphan_c:
                 oc_hm = parse_hm(orphan_c[-1])
                 ic_hm = parse_hm(ic)
-                if oc_hm and ic_hm:
-                    oc_m = oc_hm[0] * 60 + oc_hm[1]
-                    ic_m = ic_hm[0] * 60 + ic_hm[1]
-                    if oc_m > ic_m and (oc_m - ic_m) <= 90:
-                        curr_c = orphan_c[-1]
+                if oc_hm and ic_hm and (oc_hm[0] * 60 + oc_hm[1] > ic_hm[0] * 60 + ic_hm[1]):
+                    curr_c = orphan_c[-1]
             new_intervals.append((curr_g, curr_c))
         intervals = new_intervals
 
@@ -1523,6 +1518,69 @@ class PDKSEngine:
                 tot_h = 24.0
                 ot_h = max(0.0, 24.0 - base_h)
 
+            # -----------------------------------------------------------------
+            # TURNİKE HIZLI BASIM VE ÇIKIŞ SONRASI 10 DK İÇİNDE TEKRAR GİRİŞ DENETİMİ
+            # -----------------------------------------------------------------
+            is_rapid_punch = False
+            rapid_detail = ""
+            
+            punch_events = []
+            for r in rows:
+                g = r.get("g_saat", "")
+                c = r.get("c_saat", "")
+                if g:
+                    ghm = parse_hm(g)
+                    if ghm:
+                        punch_events.append(("G", ghm[0] * 60 + ghm[1], g[:5]))
+                if c:
+                    chm = parse_hm(c)
+                    if chm:
+                        punch_events.append(("C", chm[0] * 60 + chm[1], c[:5]))
+
+            exit_reentry_case = None  # (c_ev, g_ev, diff, has_subseq_c)
+
+            for i in range(len(punch_events) - 1):
+                e1 = punch_events[i]
+                e2 = punch_events[i + 1]
+                diff = e2[1] - e1[1]
+                if diff < 0:
+                    diff += 24 * 60
+                if 0 <= diff <= 10:
+                    is_rapid_punch = True
+                    det = f"{e1[0]}:{e1[2]} -> {e2[0]}:{e2[2]} ({diff} dk)"
+                    rapid_detail = f"{rapid_detail}, {det}" if rapid_detail else det
+
+                    if e1[0] == "C" and e2[0] == "G":
+                        subseq_c = [ev for ev in punch_events[i + 1:] if ev[0] == "C"]
+                        exit_reentry_case = (e1, e2, diff, bool(subseq_c))
+
+            if is_rapid_punch:
+                is_exception = True
+                status_type = "ŞÜPHELİ_HIZLI_BASIM"
+                if exit_reentry_case:
+                    c_ev, g_ev, r_diff, has_next_c = exit_reentry_case
+                    if not has_next_c:
+                        # Çıktıktan sonra 10 dk içinde tekrar giriş yapmış ve çıkış basmamış (Örn: Mahsun Görgün 18.10)
+                        # Önlem: Çıkış saatini ilk çıkışta dondur, açık vardiya / sahte mesaiyi engelle!
+                        rapid_alarm_note = (
+                            f"{c_ev[2]} çıkışından {r_diff} dk sonra tekrar giriş yapıldı ({g_ev[2]}) ve çıkış basılmadı! "
+                            f"Çıkış {c_ev[2]} kabul edildi, sahte mesai engellendi - İK / Denetimci Onayında (Kırmızı Alarm)"
+                        )
+                        if eff_c == "-" or not eff_c:
+                            eff_c = c_ev[2]
+                            raw_c_str = c_ev[2]
+                    else:
+                        # Çıkıp 10 dk içinde tekrar girmiş ve sonrasında çıkış yapmış (örn: Kadir Koç 12.10 çift vardiya)
+                        # Mesai son basımdan hesaplanır, ancak denetimciye kırmızı alarm olarak sunulur
+                        rapid_alarm_note = (
+                            f"{c_ev[2]} çıkışından {r_diff} dk sonra tekrar giriş yapıldı ({g_ev[2]})! "
+                            f"Mesai son basıma ({raw_c_str}) kadar hesaplandı, çift vardiya kontrolü - İK / Denetimci Onayında (Kırmızı Alarm)"
+                        )
+                else:
+                    rapid_alarm_note = f"Hızlı Turnike Basımı ({rapid_detail}) - İK / Denetimci Onayında (Kırmızı Alarm)"
+
+                audit_note = f"{rapid_alarm_note} | {audit_note}" if audit_note else rapid_alarm_note
+
             rec = {
                 "sno": len(self.audit_records) + 1,
                 "tarih": date_str,
@@ -1549,6 +1607,8 @@ class PDKSEngine:
                 "status_type": status_type,
                 "is_exception": is_exception,
                 "is_bonus": (bonus_hours > 0),
+                "is_rapid_punch": is_rapid_punch,
+                "rapid_detail": rapid_detail,
                 "pdks_sure": pdks_sure_str,
                 "pdks_sure_hours": pdks_sure_total_h,
                 "audit_note": audit_note

@@ -91,6 +91,8 @@ def build_puantaj_workbook(
     fill_deduct = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
     fill_missing = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid") # Turuncu (Eksik Basım)
     fill_bonus = PatternFill(start_color="E1D5E7", end_color="E1D5E7", fill_type="solid")   # Açık Mor/Lila (Bölüm Primi)
+    fill_rapid = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")   # Kırmızı Alarm (10 dk İçi Hızlı Basım)
+    font_rapid_text = Font(name=FONT_FAMILY, size=9, bold=True, color="9C0006")
     fill_zebra = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
     fill_total = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 
@@ -475,13 +477,17 @@ def build_puantaj_workbook(
         ws_miss[f"K{r_idx}"] = mp["status_type"]
         ws_miss[f"L{r_idx}"] = mp["final_hours"]
         ws_miss[f"M{r_idx}"] = mp["overtime_hours"]
-        ws_miss[f"N{r_idx}"] = "İK / Amir Onayında"
+        is_rapid = mp.get("is_rapid_punch") or ("HIZLI" in mp.get("status_type", ""))
+        ws_miss[f"N{r_idx}"] = "İK / Denetimci Onayında (10 dk Kırmızı Alarm)" if is_rapid else "İK / Amir Onayında"
         
         for c_idx in range(1, 15):
             cl = get_column_letter(c_idx)
             ws_miss[f"{cl}{r_idx}"].border = border_cell
             ws_miss[f"{cl}{r_idx}"].font = font_data
-            if c_idx == 11:
+            if is_rapid and c_idx in (11, 14):
+                ws_miss[f"{cl}{r_idx}"].fill = fill_rapid
+                ws_miss[f"{cl}{r_idx}"].font = font_rapid_text
+            elif c_idx == 11:
                 ws_miss[f"{cl}{r_idx}"].fill = fill_missing
                 ws_miss[f"{cl}{r_idx}"].font = Font(name=FONT_FAMILY, size=9, bold=True, color="C00000")
             elif c_idx in (12, 13):
