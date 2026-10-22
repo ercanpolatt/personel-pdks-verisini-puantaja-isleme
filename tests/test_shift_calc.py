@@ -221,3 +221,42 @@ class TestMultipleShiftsAndShortWork:
         assert res.break_hours == 1.5
 
 
+class TestMidnightShiftEarlyArrivalAndDateAssignment:
+    """24:00 - 08:00 gece vardiyasına erken gelenler (örn: 23:46) 00:00'a yuvarlanır ve ertesi güne (çıkış gününe) yazılır."""
+
+    def test_midnight_shift_exact_00_to_08(self):
+        """00:00 - 08:00 vardiyası tam 7.5 saat net hak ediş üretir."""
+        res = calculate_shift_hours("00:00", "08:00")
+        assert res.total_hours == 7.5
+        assert res.base_hours == 7.5
+        assert res.overtime_hours == 0.0
+        assert res.break_hours == 0.5
+
+    def test_midnight_shift_early_arrival_rounding(self):
+        """23:46'da gelen kişi 00:00'a yuvarlanarak 00:00-08:00 çalışması olarak 7.5 saat alır."""
+        res = calculate_shift_hours("00:00", "08:00")
+        assert res.total_hours == 7.5
+        assert res.effective_g == "00:00"
+        assert res.effective_c == "08:00"
+
+    def test_midnight_shift_with_overtime_1016(self):
+        """24:00 vardiyası sabah 10:16'ya kadar mesaiye kalmışsa: 7.5 normal + 2.0 FM = 9.5 saat."""
+        res = calculate_shift_hours("00:00", "10:16")
+        assert res.total_hours == 9.5
+        assert res.base_hours == 7.5
+        assert res.overtime_hours == 2.0
+
+    def test_midnight_shift_engine_assignment_to_exit_day(self):
+        """PDKSEngine içinde 16.10 23:46 giriş - 17.10 08:00 çıkış kaydı 17.10 tarihine işlenmelidir."""
+        from pdks_engine import PDKSEngine
+        engine = PDKSEngine("pdks.xls", "puantaj.xls", target_month=10, target_year=2026)
+        engine.load_personnel()
+        engine.load_and_process_pdks()
+        # Erdin Tetik 16.10 23:46 -> 17.10 08:00
+        res_17 = engine.daily_results.get(("ERDINTETIK", 17))
+        assert res_17 is not None, "17.10 tarihinde Erdin Tetik için kayıt bulunmalı"
+        assert res_17["raw_g_saat"] == "00:00", "Giriş saati 00:00'a yuvarlanmış olmalı"
+        assert res_17["final_hours"] == 7.5, "Hak ediş 7.5 saat olmalı"
+
+
+

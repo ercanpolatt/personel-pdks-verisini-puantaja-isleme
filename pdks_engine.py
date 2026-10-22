@@ -1130,6 +1130,51 @@ class PDKSEngine:
             c_saat = get_val(r, "c_saat")
             sure_val = get_val(r, "sure")
             p_tarih = get_val(r, "puantaj_tarih")
+
+            # -----------------------------------------------------------------
+            # GECE 24:00-08:00 VARDİYASI ERKENLİK DÜZELTMESİ
+            # -----------------------------------------------------------------
+            # 23:xx'de gelen kişi aslında 24:00-08:00 gece vardiyasına gelmiştir.
+            # Giriş saati 00:00'a yuvarlanır ve hakediş çıkış gününe (c_tarih) işlenir.
+            # Örnek: 16.10 saat 23:46 giriş, 17.10 saat 08:00 çıkış → 17.10 gününe 00:00-08:00 olarak yazılır.
+            if g_saat and c_saat and g_tarih and c_tarih and g_tarih != c_tarih:
+                hm_g = parse_hm(g_saat)
+                hm_c = parse_hm(c_saat)
+                if hm_g and hm_c:
+                    g_hour_min = hm_g[0] * 60 + hm_g[1]
+                    c_hour_min = hm_c[0] * 60 + hm_c[1]
+                    # Giriş 22:20 - 23:59 arası erken geliş ve çıkış ertesi gün sabah (05:00 - 11:30 arası) ise
+                    if (22 * 60 + 20 <= g_hour_min < 24 * 60) and (5 * 60 <= c_hour_min <= 11 * 60 + 30):
+                        g_saat = "00:00"  # Girişi gece yarısına yuvarla
+                        target_date = c_tarih  # Hakediş çıkış gününe yazılır
+                        gun_adi = get_day_name(c_tarih) if c_tarih else ""
+                        # Personel listesinde yoksa ekle
+                        if name_k not in self.personnel_by_key:
+                            p_data = {
+                                "sno": len(self.personnel_list) + 1,
+                                "tc": sicil if sicil else "",
+                                "ad_soyad": full_name,
+                                "name_key": name_k,
+                                "cinsiyet": "",
+                                "isletme_giris": "",
+                                "sgk_giris": "",
+                                "kidem": 0,
+                                "sgk_cikis": "",
+                                "sgk_durumu": "NORMAL",
+                                "durumu": "MEVSİMLİK",
+                                "bolum": "DİĞER",
+                                "ikamet": "",
+                                "net_maas": 0.0,
+                                "sirket": "FİDE KONSERVE",
+                                "mesai_durumu": "ALIR"
+                            }
+                            self.personnel_list.append(p_data)
+                            self.personnel_by_key[name_k] = p_data
+                            if sicil:
+                                self.personnel_by_tc[sicil] = p_data
+                        self._add_punch_to_day(c_tarih, sira, sicil, kart, gun_adi, full_name, name_k, lokasyon, g_saat, c_saat, sure_val)
+                        continue
+
             # Fiziksel giriş tarihi (g_tarih) çalışanın turnikeden fiilen geçtiği gerçek gündür
             target_date = g_tarih if g_tarih else (p_tarih if p_tarih else c_tarih)
             gun_adi = get_val(r, "gun_adi") or (get_day_name(target_date) if target_date else "")
